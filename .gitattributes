@@ -1,0 +1,2 @@
+# check out text files with LF on every OS, as .editorconfig requires (golden files compare byte for byte)
+* text=auto eol=lf
