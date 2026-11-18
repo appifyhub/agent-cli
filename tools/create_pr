@@ -134,18 +134,18 @@ fi
 LAST_RELEASE_MERGE=$(last_release_merge "$RELEASE_REF")
 
 if [ -z "$LAST_RELEASE_MERGE" ]; then
-    echoerr "Could not find the last main-to-release merge." >&2
-    exit 1
+    # the first release: every commit on main that release does not have yet
+    COMMIT_COUNT=$(git rev-list --count "$RELEASE_REF..HEAD" 2>/dev/null)
+else
+    LAST_RELEASE_MERGE_DATE=$(git show -s --format=%cI "$LAST_RELEASE_MERGE" 2>/dev/null)
+
+    if [ -z "$LAST_RELEASE_MERGE_DATE" ]; then
+        echoerr "Could not determine the last main-to-release merge date." >&2
+        exit 1
+    fi
+
+    COMMIT_COUNT=$(git rev-list --count HEAD --since="$LAST_RELEASE_MERGE_DATE" 2>/dev/null)
 fi
-
-LAST_RELEASE_MERGE_DATE=$(git show -s --format=%cI "$LAST_RELEASE_MERGE" 2>/dev/null)
-
-if [ -z "$LAST_RELEASE_MERGE_DATE" ]; then
-    echoerr "Could not determine the last main-to-release merge date." >&2
-    exit 1
-fi
-
-COMMIT_COUNT=$(git rev-list --count HEAD --since="$LAST_RELEASE_MERGE_DATE" 2>/dev/null)
 
 case "$COMMIT_COUNT" in
     ''|*[!0-9]*)
