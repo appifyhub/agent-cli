@@ -12,6 +12,8 @@ import (
 
 	"github.com/appifyhub/agent-cli/internal/buildinfo"
 	"github.com/appifyhub/agent-cli/internal/cli"
+	"github.com/appifyhub/agent-cli/internal/config"
+	"github.com/appifyhub/agent-cli/internal/credentials"
 	"github.com/appifyhub/agent-cli/internal/term"
 	"github.com/appifyhub/agent-cli/internal/text"
 )
@@ -41,6 +43,8 @@ func run() int {
 		GOOS:        runtime.GOOS,
 		GOARCH:      runtime.GOARCH,
 		Build:       buildinfo.Current(),
+		Machine:     config.LocalMachine,
+		Keychain:    credentials.SystemKeychain{},
 	}
 	return cli.Run(ctx, deps, os.Args[1:])
 }

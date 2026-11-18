@@ -137,6 +137,9 @@ server_invalid_platform = "invalid platform; use telegram or whatsapp"
 malformed_chat_id = "malformed chat id; run `{name} chats` to list yours"
 message_rejected = "the message was rejected: it must be between 1 and 4096 characters"
 request_rejected = "the server rejected the request"
+invalid_ttl = "invalid TTL \"{value}\": use a single unit, e.g. 90m"
+ttl_too_long = "TTL exceeds the maximum of 2 years"
+connected_store_failed = "connected, but the token could not be stored: {reason}; the connect key was used, get a new one from the agent"
 
 [store]
 keychain = "the system keychain"
@@ -147,6 +150,63 @@ unsafe = "the credentials file"
 calling_backend = "Calling backend…"
 http_error = "  (HTTP {status})"
 http_error_code = "  (HTTP {status}, code {code})"
+
+[command.connect]
+short = "Connect this machine to your profile using a connect key"
+long = '''Redeem a connect key from your agent's settings (send /settings, open Command Line) to connect this machine to your profile. The key is single-use; a new key is generated after a successful connection.
+Choose --store keychain, passphrase, or unsafe. Without --store, the system keychain is tried first, then an encrypted passphrase file when a terminal or THE_AGENT_CLI_PASSPHRASE is available. Otherwise the command refuses; an explicit mode never silently falls back.
+Passphrase mode asks Choose a passphrase: and Repeat passphrase: on stderr, showing one * per typed character. THE_AGENT_CLI_PASSPHRASE avoids these prompts. The passphrase is never stored. Decryption costs roughly a second per use; unlock once per terminal session to avoid repeating it. THE_AGENT_CLI_TOKEN overrides a stored token for later authenticated calls, not for connect.
+On macOS the system keychain is accessed through /usr/bin/security without access prompts. Any process running as your user can read that item while the keychain is unlocked. Use passphrase mode if that access model is unsuitable. Unsafe mode stores the token as plain text.
+Local state lives in the home directory selected by THE_AGENT_CLI_HOME, otherwise ~/.<command name>. config.toml holds device identity and connection metadata, never secrets; file modes store the token in credentials. Files are owner-readable and writable only where supported.
+--ttl is forwarded to the server, for example 90m, 3mo or 1y; the server decides what is valid. Reconnecting replaces the token; changing users clears the saved default target.
+A successful connection prints its storage location and expiry. A reported balance below 100 credits produces a low-credit warning on stderr without changing success.'''
+examples_unix = '''  {name} connect <KEY>
+  {name} connect <KEY> --ttl 3mo
+  {name} connect <KEY> --store passphrase
+  eval "$({name} unlock)"'''
+examples_windows = '''  {name} connect <KEY>
+  {name} connect <KEY> --ttl 3mo
+  {name} connect <KEY> --store passphrase
+  {name} unlock --shell pwsh | Invoke-Expression'''
+environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_PASSPHRASE, NO_COLOR"
+exit_codes = "Exit codes: 0 ok · 1 connection or storage failure · 2 usage or validation error · 6 rate limited"
+flag_store = "Store the token in keychain, passphrase, or unsafe mode"
+flag_ttl = "Token lifetime passed to the server (for example 3mo)"
+
+[connect]
+missing_key = "missing connect key; usage: {name} connect <KEY> [--ttl <text>] [--store keychain|passphrase|unsafe]"
+choose_passphrase = "Choose a passphrase: "
+repeat_passphrase = "Repeat passphrase: "
+passphrase = "Passphrase: "
+success = """✓ Connected as {user} ({hostname})
+  Token stored in: {store}
+  Expires: {expires} ({relative})
+  A new connect key was generated for your profile."""
+location_keychain_darwin = "macOS Keychain"
+location_keychain_windows = "Windows Credential Manager"
+location_keychain = "system keyring (Secret Service)"
+location_encrypted = "{path} (encrypted)"
+location_unsafe = "{path} (NOT encrypted)"
+unlock_hint_unix = '  To unlock once per terminal session: eval "$({name} unlock)"'
+unlock_hint_windows = "  To unlock once per terminal session: {name} unlock --shell pwsh | Invoke-Expression"
+
+[time]
+less_than_minute = "less than a minute"
+minute = "1 minute"
+minutes = "{count} minutes"
+hour = "1 hour"
+hours = "{count} hours"
+day = "1 day"
+days = "{count} days"
+month = "1 month"
+months = "{count} months"
+year = "1 year"
+years = "{count} years"
+future = "in {value}"
+past = "{value} ago"
+
+[warning]
+low_credit = "warning: low credit balance: {credits} credits left; top up in the agent's chat settings"
 
 [glyph]
 mask = "*"

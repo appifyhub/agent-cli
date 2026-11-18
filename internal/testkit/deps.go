@@ -8,6 +8,7 @@ import (
 
 	"github.com/appifyhub/agent-cli/internal/buildinfo"
 	"github.com/appifyhub/agent-cli/internal/cli"
+	"github.com/appifyhub/agent-cli/internal/config"
 	"github.com/appifyhub/agent-cli/internal/text"
 )
 
@@ -26,16 +27,19 @@ type Option func(*cli.Deps)
 // Run replaces Stdout and Stderr.
 func NewDeps(opts ...Option) cli.Deps {
 	deps := cli.Deps{
-		Getenv:      func(string) string { return "" },
-		UserHomeDir: func() (string, error) { return "/home/milos", nil },
-		Stdin:       strings.NewReader(""),
-		Term:        &FakeTerm{},
-		Text:        text.MustNew("linux"),
-		Now:         (&FakeClock{Time: time.Date(2026, 11, 14, 10, 21, 0, 0, time.UTC)}).Now,
-		Location:    time.UTC,
-		GOOS:        "linux",
-		GOARCH:      "amd64",
-		Build:       buildinfo.Resolve(buildinfo.Info{}),
+		Getenv:           func(string) string { return "" },
+		UserHomeDir:      func() (string, error) { return "/home/milos", nil },
+		Stdin:            strings.NewReader(""),
+		Term:             &FakeTerm{},
+		Text:             text.MustNew("linux"),
+		Now:              (&FakeClock{Time: time.Date(2026, 11, 14, 10, 21, 0, 0, time.UTC)}).Now,
+		Location:         time.UTC,
+		GOOS:             "linux",
+		GOARCH:           "amd64",
+		Build:            buildinfo.Resolve(buildinfo.Info{}),
+		Machine:          func() config.Machine { return config.Machine{ID: "test-machine", Hostname: "milos-mbp"} },
+		Keychain:         &FakeKeychain{},
+		ScryptWorkFactor: 8,
 	}
 	for _, opt := range opts {
 		opt(&deps)

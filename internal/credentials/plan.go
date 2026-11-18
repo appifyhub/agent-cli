@@ -88,8 +88,8 @@ func collectPassphrase(ctx context.Context, env Env) (string, error) {
 
 // Persist stores the token and then runs writeConfig, which records the metadata. The order is
 // fixed: secret first, then config, then removal of the secret left in the previous store. A config
-// failure removes the new secret again (unless it replaced one in the same place, which cannot be
-// restored) and a secret failure never reaches the config. Failing to clean up the previous store
+// failure removes the new secret again and a secret failure never reaches the config.
+// Failing to clean up the previous store
 // is reported as stale and does not undo the connection.
 func (p *Plan) Persist(token string, previous Mode, writeConfig func() error) (stale, err error) {
 	if err := p.store.Save(token); err != nil {
@@ -97,9 +97,7 @@ func (p *Plan) Persist(token string, previous Mode, writeConfig func() error) (s
 	}
 	replaced := previous.Valid() && sameLocation(previous, p.mode)
 	if err := writeConfig(); err != nil {
-		if !replaced {
-			_ = p.store.Delete()
-		}
+		_ = p.store.Delete()
 		return nil, err
 	}
 	if previous.Valid() && !replaced {

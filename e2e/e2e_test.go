@@ -3,6 +3,7 @@
 package e2e_test
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -199,6 +200,50 @@ func TestBinaries(t *testing.T) {
 				}
 				if entries, err := os.ReadDir(userHome); err != nil || len(entries) != 0 {
 					t.Errorf("env created files in the user home: %v, %v", entries, err)
+				}
+			})
+
+			t.Run("connect", func(t *testing.T) {
+				for _, args := range [][]string{{"connect", "--help"}, {"help", "connect"}} {
+					r := run(t, bin, args...)
+					if r.code != 0 || !strings.Contains(r.stdout, "Usage: "+name+" connect <KEY>") || r.stderr != "" {
+						t.Errorf("help: %+v", r)
+					}
+				}
+				if r := run(t, bin, "connect"); r.code != 2 || !strings.HasPrefix(r.stderr, "error: missing connect key;") {
+					t.Errorf("missing key: %+v", r)
+				}
+				backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var request map[string]any
+					if r.Method != http.MethodPost || r.URL.Path != "/cli/connect" || r.Header.Get("Authorization") != "" {
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request["connect_key"] != "TEST-KEY" || request["device_id"] == "" {
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(w, `{"token":"test-token","expires_at":"2027-02-14T09:21:00Z","user_id":"u1","user_display_name":"Tester","credit_balance":500}`)
+				}))
+				defer backend.Close()
+				home := filepath.Join(t.TempDir(), "state")
+				r := execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=" + backend.URL}, "connect", "test-key", "--store", "unsafe")
+				if r.code != 0 || r.stderr != "" || !strings.HasPrefix(r.stdout, "✓ Connected as Tester (") {
+					t.Fatalf("connect: %+v", r)
+				}
+				for _, secret := range []string{"test-token", "TEST-KEY", "test-key"} {
+					if strings.Contains(r.stdout+r.stderr, secret) {
+						t.Error("secret in command output")
+					}
+				}
+				secret, err := os.ReadFile(filepath.Join(home, "credentials"))
+				if err != nil || string(secret) != "test-token\n" {
+					t.Errorf("stored credentials: %v", err)
+				}
+				metadata, err := os.ReadFile(filepath.Join(home, "config.toml"))
+				if err != nil || !strings.Contains(string(metadata), `user_id = 'u1'`) || strings.Contains(string(metadata), "test-token") {
+					t.Errorf("connection metadata: %q, %v", metadata, err)
 				}
 			})
 

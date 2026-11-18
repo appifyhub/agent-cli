@@ -10,13 +10,14 @@ import (
 	"time"
 )
 
-// ConnectRequest is what the connect call sends. TTL is passed through untouched and omitted when empty.
+// ConnectRequest is what the connect call sends. TTL is passed through untouched.
 type ConnectRequest struct {
 	ConnectKey string
 	DeviceID   string
 	Hostname   string
 	OS         string
 	TTL        string
+	TTLSet     bool
 }
 
 // Connection is the answer to a successful connect.
@@ -45,16 +46,22 @@ type Delivery struct {
 }
 
 type connectBody struct {
-	ConnectKey string `json:"connect_key"`
-	DeviceID   string `json:"device_id"`
-	Hostname   string `json:"hostname"`
-	OS         string `json:"os"`
-	TTL        string `json:"ttl_as_text,omitempty"`
+	ConnectKey string  `json:"connect_key"`
+	DeviceID   string  `json:"device_id"`
+	Hostname   string  `json:"hostname"`
+	OS         string  `json:"os"`
+	TTL        *string `json:"ttl_as_text,omitempty"`
 }
 
 // Connect redeems a connect key. The call is not authenticated and is never retried: the key is single-use.
 func (c *Client) Connect(ctx context.Context, r ConnectRequest) (Connection, error) {
-	status, body, err := c.call(ctx, http.MethodPost, "/cli/connect", "", connectBody(r))
+	var ttl *string
+	if r.TTLSet || r.TTL != "" {
+		ttl = &r.TTL
+	}
+	status, body, err := c.call(ctx, http.MethodPost, "/cli/connect", "", connectBody{
+		ConnectKey: r.ConnectKey, DeviceID: r.DeviceID, Hostname: r.Hostname, OS: r.OS, TTL: ttl,
+	})
 	if err != nil {
 		return Connection{}, err
 	}

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/appifyhub/agent-cli/internal/buildinfo"
+	"github.com/appifyhub/agent-cli/internal/config"
+	"github.com/appifyhub/agent-cli/internal/credentials"
 	"github.com/appifyhub/agent-cli/internal/term"
 	"github.com/appifyhub/agent-cli/internal/text"
 )
@@ -27,5 +29,8 @@ type Deps struct {
 	GOARCH      string
 	Build       buildinfo.Info
 	// HTTP is the transport of every backend call; nil means the default transport, which honors the proxy environment.
-	HTTP http.RoundTripper
+	HTTP             http.RoundTripper
+	Machine          func() config.Machine
+	Keychain         credentials.Keychain
+	ScryptWorkFactor int
 }

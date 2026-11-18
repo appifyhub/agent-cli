@@ -1,0 +1,24 @@
+Redeem a connect key from your agent's settings (send /settings, open Command Line) to connect this machine to your profile. The key is single-use; a new key is generated after a successful connection.
+Choose --store keychain, passphrase, or unsafe. Without --store, the system keychain is tried first, then an encrypted passphrase file when a terminal or THE_AGENT_CLI_PASSPHRASE is available. Otherwise the command refuses; an explicit mode never silently falls back.
+Passphrase mode asks Choose a passphrase: and Repeat passphrase: on stderr, showing one * per typed character. THE_AGENT_CLI_PASSPHRASE avoids these prompts. The passphrase is never stored. Decryption costs roughly a second per use; unlock once per terminal session to avoid repeating it. THE_AGENT_CLI_TOKEN overrides a stored token for later authenticated calls, not for connect.
+On macOS the system keychain is accessed through /usr/bin/security without access prompts. Any process running as your user can read that item while the keychain is unlocked. Use passphrase mode if that access model is unsuitable. Unsafe mode stores the token as plain text.
+Local state lives in the home directory selected by THE_AGENT_CLI_HOME, otherwise ~/.<command name>. config.toml holds device identity and connection metadata, never secrets; file modes store the token in credentials. Files are owner-readable and writable only where supported.
+--ttl is forwarded to the server, for example 90m, 3mo or 1y; the server decides what is valid. Reconnecting replaces the token; changing users clears the saved default target.
+A successful connection prints its storage location and expiry. A reported balance below 100 credits produces a low-credit warning on stderr without changing success.
+
+Usage: agent-cli connect <KEY>
+
+Flags:
+      --store <string>  Store the token in keychain, passphrase, or unsafe mode
+      --ttl <string>    Token lifetime passed to the server (for example 3mo)
+  -h, --help            Print help
+  -v, --verbose         Print diagnostic details to stderr
+
+Examples:
+  agent-cli connect <KEY>
+  agent-cli connect <KEY> --ttl 3mo
+  agent-cli connect <KEY> --store passphrase
+  eval "$(agent-cli unlock)"
+
+Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_PASSPHRASE, NO_COLOR
+Exit codes: 0 ok · 1 connection or storage failure · 2 usage or validation error · 6 rate limited

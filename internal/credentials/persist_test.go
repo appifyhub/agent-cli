@@ -94,6 +94,28 @@ func TestConfigFailureRollsTheNewSecretBack(t *testing.T) {
 	}
 }
 
+func TestSameLocationConfigFailureRemovesTheNewSecret(t *testing.T) {
+	for _, mode := range []string{"keychain", "unsafe", "passphrase"} {
+		t.Run(mode, func(t *testing.T) {
+			r := newRig(t)
+			r.vars[config.EnvPassphrase] = "pw"
+			r.connect(mode)
+			plan, err := credentials.NewPlan(t.Context(), r.env, deviceID, mode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			boom := errors.New("disk full")
+			_, err = plan.Persist("new-secret", credentials.Mode(mode), func() error { return boom })
+			if !errors.Is(err, boom) {
+				t.Fatalf("got %v", err)
+			}
+			if r.kc.Len() != 0 || r.fileExists(r.credentialsPath()) {
+				t.Error("the newly saved secret survived a failed config write")
+			}
+		})
+	}
+}
+
 func TestSecretFailureNeverReachesTheConfig(t *testing.T) {
 	r := newRig(t)
 	plan, err := credentials.NewPlan(t.Context(), r.env, deviceID, "keychain")
