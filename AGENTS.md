@@ -15,9 +15,10 @@
 - All tests are offline and deterministic on macOS, Linux and Windows. Use the fakes in `internal/testkit` (`NewDeps`, `FakeTerm`, `FakeClock`, `Run`, `Golden`, `AssertNoSecret`), `httptest`, temporary directories and temporary git repositories; never touch the real keychain, network or home directory.
 - `cli.Deps` is the only seam: environment, streams, terminal, clock, location, GOOS/GOARCH, hostname, home directory, keychain, HTTP transport, scrypt work factor and the build identity. It grows with each milestone.
 - Golden files live in `testdata/*.golden`; rewrite them with `UPDATE_GOLDEN=1 go test ./...` and review the diff.
+- The `e2e` package runs the four real builds from `tools/build` on each OS (`make e2e`, `scripts/e2e.sh`); without the script it skips. Each milestone that adds a command adds that command's offline basics there: help, exit codes, and the output that differs per build.
 - Every spec scenario maps to at least one test. Tests that need POSIX permission bits or the shell tools skip on Windows.
 - Test behavior, not construction or wiring. Ask before creating new test files outside the ones a task names.
-- Always run the whole gate before a stop or a pull request: `go build ./... && go vet ./... && go test -race -count=1 ./... && golangci-lint run`. Windows runs the tests without `-race`.
+- Always run the whole gate before a stop or a pull request: `go build ./... && go vet ./... && go test -race -count=1 ./... && golangci-lint run && sh scripts/e2e.sh`. Windows runs the tests without `-race`.
 
 ### Comments
 

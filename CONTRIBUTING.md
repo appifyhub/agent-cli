@@ -154,7 +154,7 @@ After PR feedback has been given, we expect responses within two weeks. After tw
 
 The rules are straightforward and more or less "industry standard":
 
-- Lint tooling checks for code style and code conventions (runs in CI too); run `go build ./... && go vet ./... && go test -race -count=1 ./... && golangci-lint run` before opening a pull request
+- Lint tooling checks for code style and code conventions (runs in CI too); run `go build ./... && go vet ./... && go test -race -count=1 ./... && golangci-lint run && sh scripts/e2e.sh` before opening a pull request
 - We use **imperative** language for commit messages
     - e.g. "**Add** feature X" instead of "_Adding_ feature X", answering the question "What will this commit do, if applied?"
 - We try to make PRs small, so that they're easy to review
