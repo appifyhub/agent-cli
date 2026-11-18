@@ -5,7 +5,8 @@ import (
 )
 
 func (s *rootState) completionCommand() *cobra.Command {
-	return &cobra.Command{
+	cat, name := s.deps.Text, s.deps.Build.Name
+	return withHelp(&cobra.Command{
 		Use:       "completion bash|zsh|fish|powershell",
 		Short:     s.deps.Text.T("command.completion.short"),
 		Long:      s.deps.Text.T("command.completion.long"),
@@ -25,5 +26,5 @@ func (s *rootState) completionCommand() *cobra.Command {
 			}
 			return usageError(s.deps.Text.T("command.completion.unsupported_shell", "shell", args[0]))
 		},
-	}
+	}, cat.T("command.completion.examples", "name", name), cat.T("command.completion.environment"), cat.T("command.completion.exit_codes"))
 }

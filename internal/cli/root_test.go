@@ -167,15 +167,53 @@ func TestUsageErrorsAreOneLine(t *testing.T) {
 	}
 }
 
-func TestSubcommandHelp(t *testing.T) {
-	want := "Generate the completion script for the given shell and print it to stdout.\n\n" +
-		"Usage: agent-cli completion bash|zsh|fish|powershell\n\n" +
-		"Flags:\n" +
-		"  -h, --help     Print help\n" +
-		"  -v, --verbose  Print diagnostic details to stderr\n"
-	for _, args := range [][]string{{"completion", "-h"}, {"completion", "--help"}, {"help", "completion"}} {
-		if res := runOn(t, "linux", args...); res.Code != 0 || res.Stdout != want {
-			t.Errorf("%v: %+v", args, res)
+func TestCommandHelpGoldens(t *testing.T) {
+	for _, command := range []string{"completion", "env", "server", "help"} {
+		for _, c := range []struct{ goos, golden string }{{"darwin", "unix"}, {"linux", "unix"}, {"windows", "windows"}} {
+			forms := [][]string{{command, "-h"}, {command, "--help"}, {"help", command}}
+			first := runOn(t, c.goos, forms[0]...)
+			if first.Code != 0 || first.Stderr != "" {
+				t.Fatalf("%v: %+v", forms[0], first)
+			}
+			testkit.Golden(t, command+"_help_"+c.golden, first.Stdout)
+			for _, args := range forms[1:] {
+				if res := runOn(t, c.goos, args...); res != first {
+					t.Errorf("%v differs from %v:\n%s\n---\n%s", args, forms[0], res.Stdout, first.Stdout)
+				}
+			}
+		}
+	}
+}
+
+// commandNames reads the command names off the root help, the way a user finds them.
+func commandNames(t *testing.T) []string {
+	t.Helper()
+	var names []string
+	inCommands := false
+	for _, line := range strings.Split(runOn(t, "linux", "help").Stdout, "\n") {
+		switch {
+		case line == "Commands:":
+			inCommands = true
+		case inCommands && strings.HasPrefix(line, "  "):
+			names = append(names, strings.Fields(line)[0])
+		case inCommands:
+			return names
+		}
+	}
+	return names
+}
+
+func TestEveryCommandHelpListsExamplesEnvironmentAndExitCodes(t *testing.T) {
+	names := commandNames(t)
+	if len(names) < 4 {
+		t.Fatalf("found only %v", names)
+	}
+	for _, name := range names {
+		res := runOn(t, "linux", "help", name)
+		for _, want := range []string{"\nExamples:\n", "\nEnvironment: ", "\nExit codes: "} {
+			if !strings.Contains(res.Stdout, want) {
+				t.Errorf("help of %q lacks %q:\n%s", name, strings.TrimSpace(want), res.Stdout)
+			}
 		}
 	}
 }

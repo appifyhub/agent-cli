@@ -10,7 +10,20 @@ import (
 
 // commandOrder is the order of the Commands section of the root help; commands that are not
 // registered yet are simply absent.
-var commandOrder = []string{"connect", "revoke-all", "status", "chats", "notify", "unlock", "env", "completion", "help"}
+var commandOrder = []string{"connect", "revoke-all", "status", "server", "chats", "notify", "unlock", "env", "completion", "help"}
+
+// help annotations: the environment and exit-code lines of a command's help
+const (
+	annotationEnvironment = "environment"
+	annotationExitCodes   = "exit_codes"
+)
+
+// withHelp attaches the examples and the environment and exit-code lines to a command's help.
+func withHelp(cmd *cobra.Command, examples, environment, exitCodes string) *cobra.Command {
+	cmd.Example = examples
+	cmd.Annotations = map[string]string{annotationEnvironment: environment, annotationExitCodes: exitCodes}
+	return cmd
+}
 
 // rootState is the per-invocation state shared by the commands.
 type rootState struct {
@@ -50,6 +63,7 @@ func newRoot(deps Deps) (*cobra.Command, *rootState) {
 	root.SetHelpFunc(state.renderHelp)
 
 	root.AddCommand(state.envCommand())
+	root.AddCommand(state.serverCommand())
 	root.AddCommand(state.completionCommand())
 
 	state.guardArgs(root)
@@ -142,6 +156,10 @@ func (s *rootState) commandHelp(cmd *cobra.Command) string {
 	if lines := flagLines(cmd.LocalFlags(), cmd.InheritedFlags()); len(lines) > 0 {
 		fmt.Fprintf(&b, "\n%s\n%s\n", cat.T("help.flags_label"), strings.Join(lines, "\n"))
 	}
+	if cmd.Example != "" {
+		fmt.Fprintf(&b, "\n%s\n%s\n", cat.T("help.examples_label"), cmd.Example)
+	}
+	fmt.Fprintf(&b, "\n%s\n%s\n", cmd.Annotations[annotationEnvironment], cmd.Annotations[annotationExitCodes])
 	return b.String()
 }
 
@@ -186,9 +204,11 @@ func flagLines(sets ...*pflag.FlagSet) []string {
 }
 
 func (s *rootState) helpCommand() *cobra.Command {
-	return &cobra.Command{
+	cat := s.deps.Text
+	return withHelp(&cobra.Command{
 		Use:   "help [command]",
-		Short: s.deps.Text.T("command.help.short"),
+		Short: cat.T("command.help.short"),
+		Long:  cat.T("command.help.long"),
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := cmd.Root()
@@ -198,5 +218,5 @@ func (s *rootState) helpCommand() *cobra.Command {
 			}
 			return target.Help()
 		},
-	}
+	}, cat.T("command.help.examples", "name", s.deps.Build.Name), cat.T("command.help.environment"), cat.T("command.help.exit_codes"))
 }

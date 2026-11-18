@@ -1,0 +1,14 @@
+Generate the completion script for the given shell and print it to stdout.
+
+Usage: agent-cli completion bash|zsh|fish|powershell
+
+Flags:
+  -h, --help     Print help
+  -v, --verbose  Print diagnostic details to stderr
+
+Examples:
+  eval "$(agent-cli completion zsh)"
+  agent-cli completion bash > /etc/bash_completion.d/agent-cli
+
+Environment: none
+Exit codes: 0 ok · 2 usage error or unsupported shell

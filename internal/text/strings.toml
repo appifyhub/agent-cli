@@ -17,20 +17,56 @@ flag_help = "Print help"
 [help]
 usage_label = "Usage:"
 flags_label = "Flags:"
+examples_label = "Examples:"
 
 [command.help]
 short = "Help for any command"
+long = "Print the help of a command: what it does, its usage, flags and examples, and the environment variables and exit codes that affect it."
+examples = """  {name} help env
+  {name} env --help"""
+environment = "Environment: none"
+exit_codes = "Exit codes: 0 ok · 2 unknown help topic"
 
 [command.env]
 short = "Show the environment variables the CLI reads"
 long = '''Print every environment variable the CLI reads, what it controls, whether it is set and the value in effect.
 A variable that is not set shows the default in effect, which can come from the config file or the build.
 Secrets are reported as set, never shown. Works offline and changes nothing.'''
+examples_unix = """  {name} env
+  THE_AGENT_CLI_API_URL=https://agent.example.com {name} env"""
+examples_windows = """  {name} env
+  $env:THE_AGENT_CLI_API_URL = "https://agent.example.com"; {name} env"""
+environment = "Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM, NO_COLOR"
+exit_codes = "Exit codes: 0 ok · 1 failure (home directory or config file unusable) · 2 usage error"
+
+[command.server]
+short = "Show the health and version of the backend"
+long = '''Ask the backend whether it is up and print what it reports about itself: its address, status and version, any other detail it shares, and how long it took to answer.
+Needs no connection, token or passphrase, and changes nothing. Use it to tell a server problem from a local one.'''
+examples_unix = """  {name} server
+  THE_AGENT_CLI_API_URL=https://agent.example.com {name} server"""
+examples_windows = """  {name} server
+  $env:THE_AGENT_CLI_API_URL = "https://agent.example.com"; {name} server"""
+environment = "Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME"
+exit_codes = "Exit codes: 0 ok · 1 unhealthy or unreachable server · 2 usage error or invalid API URL · 6 rate limited"
+label_server = "Server"
+label_status = "Status"
+label_version = "Version"
+label_response = "Response"
+response = "{ms} ms"
+unreachable = "could not reach the server at {url}: {reason}"
+http_error = "the server at {url} answered HTTP {status}"
+not_agent = "the address {url} did not answer like the agent's server"
 
 [command.completion]
 short = "Generate shell completion scripts"
 long = "Generate the completion script for the given shell and print it to stdout."
 unsupported_shell = "unsupported shell \"{shell}\"; use bash, zsh, fish or powershell"
+examples_unix = """  eval "$({name} completion zsh)"
+  {name} completion bash > /etc/bash_completion.d/{name}"""
+examples_windows = """  {name} completion powershell | Out-String | Invoke-Expression"""
+environment = "Environment: none"
+exit_codes = "Exit codes: 0 ok · 2 usage error or unsupported shell"
 
 [env]
 not_set = "not set"
@@ -66,6 +102,51 @@ invalid_platform = "invalid THE_AGENT_CLI_DEFAULT_PLATFORM \"{value}\": use tele
 unknown_command = "unknown command \"{command}\" for \"{path}\""
 unknown_help_topic = "unknown help topic \"{topic}\""
 aborted = "Aborted."
+invalid_store = "invalid --store \"{value}\": use keychain, passphrase, or unsafe"
+no_keychain = "no keychain is available on this machine; use --store passphrase or --store unsafe"
+passphrase_required = "a passphrase is required; run in a terminal or set THE_AGENT_CLI_PASSPHRASE"
+no_store = "no keychain is available and no passphrase can be requested here; use --store unsafe or provide a token with THE_AGENT_CLI_TOKEN"
+passphrase_mismatch = "passphrases do not match"
+passphrase_empty = "passphrase cannot be empty"
+incorrect_passphrase = "incorrect passphrase"
+credentials_damaged = "the credentials file is damaged; run `{name} connect <KEY>` to connect again"
+token_locked_unix = 'token is locked; set THE_AGENT_CLI_PASSPHRASE or run `eval "$({name} unlock)"`'
+token_locked_windows = "token is locked; set THE_AGENT_CLI_PASSPHRASE or run `{name} unlock --shell pwsh | Invoke-Expression`"
+invalid_env_token = "THE_AGENT_CLI_TOKEN is not a valid CLI token"
+not_connected = "This CLI is not connected. Run `{name} connect <KEY>`."
+store_read = "could not read the token from {store}: {reason}"
+store_write = "could not store the token in {store}: {reason}"
+store_remove = "could not remove the token from {store}: {reason}"
+token_too_big = "the token is too big for the credential store"
+unreachable = "could not reach the server"
+rate_limited = "rate limited; wait a moment and try again"
+unexpected_response = "unexpected response from the server"
+server_fault = "the server had a problem; try again later"
+delivery_failed = "the platform could not deliver the message; try again later"
+policies_required = "accept the agent's policies first; send /settings to the agent, then try again"
+waitlist = "your account is still on the waitlist; try again once the agent has activated it"
+env_token_rejected = "the token in THE_AGENT_CLI_TOKEN was rejected by the server (expired or revoked)"
+chat_no_private = "chat unreachable: no private chat found; start a conversation with the agent on Telegram or WhatsApp first"
+chat_delivery_refused = "chat unreachable: the platform refused the message (WhatsApp only allows messages within 24 hours of your last message)"
+chat_not_admin = "chat unreachable: you are not an admin of that chat"
+chat_unknown = "chat unreachable: no such chat; run `{name} chats` to list yours"
+insufficient_credits = "insufficient credits; top up in the agent's settings (send /settings to the agent)"
+invalid_connect_key = "invalid connect key"
+device_rejected = "the server rejected this machine's details; please report this"
+server_invalid_platform = "invalid platform; use telegram or whatsapp"
+malformed_chat_id = "malformed chat id; run `{name} chats` to list yours"
+message_rejected = "the message was rejected: it must be between 1 and 4096 characters"
+request_rejected = "the server rejected the request"
+
+[store]
+keychain = "the system keychain"
+passphrase = "the encrypted credentials file"
+unsafe = "the credentials file"
+
+[verbose]
+calling_backend = "Calling backend…"
+http_error = "  (HTTP {status})"
+http_error_code = "  (HTTP {status}, code {code})"
 
 [glyph]
 mask = "*"

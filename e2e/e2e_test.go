@@ -4,12 +4,16 @@ package e2e_test
 
 import (
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"unicode/utf8"
 )
@@ -195,6 +199,42 @@ func TestBinaries(t *testing.T) {
 				}
 				if entries, err := os.ReadDir(userHome); err != nil || len(entries) != 0 {
 					t.Errorf("env created files in the user home: %v, %v", entries, err)
+				}
+			})
+
+			t.Run("server", func(t *testing.T) {
+				var hits atomic.Int32
+				backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					hits.Add(1)
+					if r.URL.Path != "/health" || r.Header.Get("Authorization") != "" || !strings.HasPrefix(r.Header.Get("User-Agent"), name+"/") {
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					_, _ = io.WriteString(w, `{"status":"ok","version":"9.9.9","region":"eu"}`)
+				}))
+				defer backend.Close()
+
+				home := filepath.Join(t.TempDir(), "home")
+				r := execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=" + backend.URL}, "server")
+				host := strings.TrimPrefix(backend.URL, "http://")
+				report := regexp.MustCompile(`^Server    ` + regexp.QuoteMeta(host) + `\nStatus    ok\nVersion   9\.9\.9\nregion    eu\nResponse  \d+ ms\n$`)
+				if r.code != 0 || r.stderr != "" || !report.MatchString(r.stdout) {
+					t.Errorf("code %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+				}
+				if _, err := os.Stat(home); !errors.Is(err, os.ErrNotExist) {
+					t.Error("server created the home directory")
+				}
+
+				backend.Close()
+				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=" + backend.URL}, "server")
+				if r.code != 1 || r.stdout != "" || !strings.HasPrefix(r.stderr, "error: could not reach the server at "+backend.URL+": ") {
+					t.Errorf("closed port: code %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+				}
+
+				before := hits.Load()
+				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=http://agent.example.test"}, "server")
+				if r.code != 2 || r.stdout != "" || !strings.HasPrefix(r.stderr, "error: invalid API URL") || hits.Load() != before {
+					t.Errorf("remote http: code %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 				}
 			})
 

@@ -14,6 +14,10 @@ import (
 type Failure struct {
 	Code    int
 	Message string
+	// Bare prints the message as it is, without the "error: " prefix: the not-connected guidance.
+	Bare bool
+	// Silent prints nothing: the command already showed its result and only sets the exit code.
+	Silent bool
 }
 
 func (f *Failure) Error() string { return f.Message }
@@ -40,6 +44,13 @@ func Present(w io.Writer, cat *text.Catalog, err error) int {
 	if errors.As(err, &known) {
 		failure = known
 	}
-	_, _ = fmt.Fprintln(w, cat.T("error.line", "message", term.Clean(failure.Message, 0)))
+	if failure.Silent {
+		return failure.Code
+	}
+	message := term.Clean(failure.Message, 0)
+	if !failure.Bare {
+		message = cat.T("error.line", "message", message)
+	}
+	_, _ = fmt.Fprintln(w, message)
 	return failure.Code
 }

@@ -25,13 +25,13 @@ var envVariables = []struct{ name, id string }{
 
 func (s *rootState) envCommand() *cobra.Command {
 	cat := s.deps.Text
-	return &cobra.Command{
+	return withHelp(&cobra.Command{
 		Use:   "env",
 		Short: cat.T("command.env.short"),
 		Long:  cat.T("command.env.long"),
 		Args:  cobra.NoArgs,
 		RunE:  func(*cobra.Command, []string) error { return s.runEnv() },
-	}
+	}, cat.T("command.env.examples", "name", s.deps.Build.Name), cat.T("command.env.environment"), cat.T("command.env.exit_codes"))
 }
 
 // runEnv prints every variable with its purpose, whether it is set and the value in effect. It reads the

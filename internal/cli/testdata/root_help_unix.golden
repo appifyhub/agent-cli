@@ -2,6 +2,7 @@ agent-cli – command-line access to your agent: connect this machine and send n
 Usage: agent-cli <command> [flags]
 
 Commands:
+  server      Show the health and version of the backend
   env         Show the environment variables the CLI reads
   completion  Generate shell completion scripts
   help        Help for any command

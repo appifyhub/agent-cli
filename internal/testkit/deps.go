@@ -2,6 +2,7 @@
 package testkit
 
 import (
+	"net/http"
 	"strings"
 	"time"
 
@@ -70,6 +71,11 @@ func WithPlatform(goos, goarch string) Option {
 // WithBuild sets the build identity; empty fields get the defaults.
 func WithBuild(info buildinfo.Info) Option {
 	return func(d *cli.Deps) { d.Build = buildinfo.Resolve(info) }
+}
+
+// WithHTTP sets the transport of backend calls, for example a fake backend's client transport.
+func WithHTTP(t http.RoundTripper) Option {
+	return func(d *cli.Deps) { d.HTTP = t }
 }
 
 func WithClock(c *FakeClock, loc *time.Location) Option {
