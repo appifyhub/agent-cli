@@ -35,6 +35,8 @@ Every release on the [Releases page](https://github.com/appifyhub/agent-cli/rele
 | `agent-cli_<version>_<os>_<arch>` | The generic CLI, for any backend instance |
 | `abot_<version>_<os>_<arch>` | The same CLI, preconfigured for the hosted service |
 
+Pre-releases carry the same pair as `agent-cli-dev` and `abot-dev`, where `abot-dev` points at the hosted service's staging environment.
+
 Unpack the archive and put the binary on your `PATH`. On macOS, a manually downloaded binary can be quarantined by Gatekeeper; clear the flag with `xattr -d com.apple.quarantine ./agent-cli`. MacOS 13 or later is required. On Windows, SmartScreen may warn on first launch.
 
 The hosted build is also available from package managers, which avoid both prompts:

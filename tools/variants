@@ -1,0 +1,46 @@
+#!/usr/bin/env sh
+
+# the one definition of the build variants, sourced by tools/build and tools/release:
+#   abot           production backend           released from pushes to release
+#   agent-cli      generic, http://localhost    released from pushes to release, next to abot
+#   abot-dev       staging backend              released from pull requests to release
+#   agent-cli-dev  generic, http://localhost    released from pull requests to release, next to abot-dev
+# THE_AGENT_CLI_BUILD_API_URL and THE_AGENT_CLI_BUILD_PRODUCT_URL override the URLs of a local build
+
+# every build, in the order the Makefile builds them
+VARIANTS="agent-cli agent-cli-dev abot-dev abot"
+
+load_variant() {
+    case "$1" in
+        abot)
+            VARIANT_API_URL="https://agent.cloud.appifyhub.com"
+            ;;
+        abot-dev)
+            VARIANT_API_URL="https://staging.agent.cloud.appifyhub.com"
+            ;;
+        agent-cli|agent-cli-dev)
+            VARIANT_API_URL="http://localhost"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    VARIANT_NAME="$1"
+    VARIANT_API_URL=${THE_AGENT_CLI_BUILD_API_URL:-$VARIANT_API_URL}
+    VARIANT_PRODUCT_URL=${THE_AGENT_CLI_BUILD_PRODUCT_URL:-https://agent.appifyhub.com}
+    return 0
+}
+
+# prints the version from VERSION, or fails with a message naming the file
+read_version() {
+    if [ ! -f "VERSION" ]; then
+        echoerr "Missing 'VERSION'." >&2
+        return 1
+    fi
+    version=$(awk 'NR == 1 && $0 ~ /^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/ { print $0 }' VERSION)
+    if [ -z "$version" ] || [ "$(wc -l < VERSION | tr -d ' ')" != "1" ]; then
+        echoerr "'VERSION' must contain exactly one semantic version (MAJOR.MINOR.PATCH)." >&2
+        return 1
+    fi
+    printf "%s\n" "$version"
+}

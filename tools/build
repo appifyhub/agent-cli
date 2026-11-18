@@ -1,0 +1,40 @@
+#!/usr/bin/env sh
+
+. "$(dirname "$0")/messages"
+. "$(dirname "$0")/variants"
+
+# builds one variant for the current system (or $GOOS/$GOARCH) into $OUT_DIR (default: bin)
+# release archives for every platform are built by tools/release through GoReleaser
+
+usage() {
+    echoerr "Usage: $0 {abot|agent-cli|abot-dev|agent-cli-dev}"
+}
+
+if [ ! -f "go.mod" ]; then
+    echowarn "No 'go.mod' found. This script must be run from the project root!" >&2
+    echoerr "Exiting..." -n >&2
+    exit 1
+fi
+
+if [ "$#" -ne 1 ] || ! load_variant "$1"; then
+    usage >&2
+    exit 1
+fi
+
+VERSION=$(read_version) || exit 1
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || true)
+DATE=$(git show -s --format=%cs HEAD 2>/dev/null || true)
+
+PKG="github.com/appifyhub/agent-cli/internal/buildinfo"
+LDFLAGS="-s -w -X $PKG.Name=$VARIANT_NAME -X $PKG.Commit=${COMMIT:-unknown} -X $PKG.Date=${DATE:-unknown} -X $PKG.APIURL=$VARIANT_API_URL -X $PKG.ProductURL=$VARIANT_PRODUCT_URL"
+
+OUT="${OUT_DIR:-bin}"
+EXT=""
+[ "${GOOS:-$(go env GOOS)}" = "windows" ] && EXT=".exe"
+mkdir -p "$OUT"
+
+CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o "$OUT/$VARIANT_NAME$EXT" ./cmd/agent-cli || {
+    echoerr "Build failed." >&2
+    exit 1
+}
+echoinfo "Built $OUT/$VARIANT_NAME$EXT (version $VERSION, backend $VARIANT_API_URL)"

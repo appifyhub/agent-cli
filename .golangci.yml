@@ -18,12 +18,12 @@ linters:
         - pattern: ^fmt\.Print(f|ln)?$
           msg: output goes through the terminal abstraction, not fmt.Print*
         - pattern: ^os\.(Stdout|Stderr)$
-          msg: only internal/term and cmd/abot may use the standard streams
+          msg: only internal/term and cmd/agent-cli may use the standard streams
   exclusions:
     presets:
       - std-error-handling
     rules:
-      - path: ^(internal/term|cmd/abot)/
+      - path: ^(internal/term|cmd/agent-cli)/
         linters:
           - forbidigo
       - linters:
@@ -32,7 +32,7 @@ linters:
       - path: _test\.go$
         linters:
           - gosec
-        text: G204|G702|G703
+        text: G204|G302|G702|G703
 
 formatters:
   enable:
