@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# run through tools/release, which picks the release (beta or ga) and sets the THE_AGENT_CLI_* values used below
+version: 2
+
+project_name: agent-cli
+
+builds:
+  - &build
+    id: branded
+    main: ./cmd/agent-cli
+    binary: "{{ .Env.THE_AGENT_CLI_BRANDED_NAME }}"
+    env:
+      - CGO_ENABLED=0
+    goos: [ darwin, linux, windows ]
+    goarch: [ amd64, arm64 ]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/appifyhub/agent-cli/internal/buildinfo.Name={{ .Env.THE_AGENT_CLI_BRANDED_NAME }}
+      - -X github.com/appifyhub/agent-cli/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/appifyhub/agent-cli/internal/buildinfo.Date={{ .CommitDate }}
+      - -X github.com/appifyhub/agent-cli/internal/buildinfo.APIURL={{ .Env.THE_AGENT_CLI_BRANDED_API_URL }}
+      - -X github.com/appifyhub/agent-cli/internal/buildinfo.ProductURL={{ .Env.THE_AGENT_CLI_PRODUCT_URL }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  - <<: *build
+    id: generic
+    binary: "{{ .Env.THE_AGENT_CLI_GENERIC_NAME }}"
+    ldflags:
+      - -s -w
+      - -X github.com/appifyhub/agent-cli/internal/buildinfo.Name={{ .Env.THE_AGENT_CLI_GENERIC_NAME }}
+      - -X github.com/appifyhub/agent-cli/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/appifyhub/agent-cli/internal/buildinfo.Date={{ .CommitDate }}
+      - -X github.com/appifyhub/agent-cli/internal/buildinfo.APIURL={{ .Env.THE_AGENT_CLI_GENERIC_API_URL }}
+      - -X github.com/appifyhub/agent-cli/internal/buildinfo.ProductURL={{ .Env.THE_AGENT_CLI_PRODUCT_URL }}
+
+archives:
+  - &archive
+    id: branded
+    ids: [ branded ]
+    formats: [ tar.gz ]
+    format_overrides:
+      - goos: windows
+        formats: [ zip ]
+    name_template: "{{ .Env.THE_AGENT_CLI_BRANDED_NAME }}_{{ .Env.THE_AGENT_CLI_VERSION }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+  - <<: *archive
+    id: generic
+    ids: [ generic ]
+    name_template: "{{ .Env.THE_AGENT_CLI_GENERIC_NAME }}_{{ .Env.THE_AGENT_CLI_VERSION }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ .Env.THE_AGENT_CLI_VERSION }}-snapshot"
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "(?i)bump.*version"
+      - "(?i)increase.*version"
+      - "(?i)version.*bump"
+      - "(?i)version.*increase"
+      - "(?i)merge.*request"
+      - "(?i)request.*merge"
+
+release:
+  name_template: "The Agent CLI {{ .Env.THE_AGENT_CLI_VERSION }}{{ with .Prerelease }} ({{ . }}){{ end }}"
+  prerelease: auto
+  make_latest: "{{ if .Prerelease }}false{{ else }}true{{ end }}"

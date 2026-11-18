@@ -1,0 +1,37 @@
+# every user-facing string of the CLI lives here
+# per-OS variants are sibling keys with the suffix _darwin, _linux, _windows or _unix (every OS except windows)
+# placeholders are written {name}; {{ and }} are literal braces
+# {name} is always the command name of the build and {product_url} its product page; never write a command name here
+
+[root]
+description = "{name} – command-line access to your agent: connect this machine and send notifications to your chats. More at {product_url}"
+usage = "Usage: {name} <command> [flags]"
+commands_label = "Commands:"
+flags = "Flags: -v/--verbose, -h/--help, --version"
+environment = "Environment: THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME, NO_COLOR"
+exit_codes = "Exit codes: 0 ok · 1 failure · 2 usage error · 3 not connected or locked · 4 chat unreachable · 5 insufficient credits · 6 rate limited"
+flag_verbose = "Print diagnostic details to stderr"
+flag_version = "Print the version"
+flag_help = "Print help"
+
+[help]
+usage_label = "Usage:"
+flags_label = "Flags:"
+
+[command.help]
+short = "Help for any command"
+
+[command.completion]
+short = "Generate shell completion scripts"
+long = "Generate the completion script for the given shell and print it to stdout."
+unsupported_shell = "unsupported shell \"{shell}\"; use bash, zsh, fish or powershell"
+
+[error]
+line = "error: {message}"
+unexpected = "unexpected internal error"
+unknown_command = "unknown command \"{command}\" for \"{path}\""
+unknown_help_topic = "unknown help topic \"{topic}\""
+aborted = "Aborted."
+
+[glyph]
+mask = "*"
