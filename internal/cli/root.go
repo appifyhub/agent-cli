@@ -48,6 +48,8 @@ func newRoot(deps Deps) (*cobra.Command, *rootState) {
 
 	root.SetHelpCommand(state.helpCommand())
 	root.SetHelpFunc(state.renderHelp)
+
+	root.AddCommand(state.envCommand())
 	root.AddCommand(state.completionCommand())
 
 	state.guardArgs(root)

@@ -20,19 +20,21 @@ func (c *FakeClock) Now() time.Time { return c.Time }
 // Option customizes the Deps built by NewDeps.
 type Option func(*cli.Deps)
 
-// NewDeps builds Deps for a linux/amd64 run of a default build: empty environment, empty stdin,
-// a non-interactive FakeTerm, a fixed clock and UTC. Run replaces Stdout and Stderr.
+// NewDeps builds Deps for a linux/amd64 run of a default build: empty environment, the user home
+// /home/milos (which does not exist), empty stdin, a non-interactive FakeTerm, a fixed clock and UTC.
+// Run replaces Stdout and Stderr.
 func NewDeps(opts ...Option) cli.Deps {
 	deps := cli.Deps{
-		Getenv:   func(string) string { return "" },
-		Stdin:    strings.NewReader(""),
-		Term:     &FakeTerm{},
-		Text:     text.MustNew("linux"),
-		Now:      (&FakeClock{Time: time.Date(2026, 11, 14, 10, 21, 0, 0, time.UTC)}).Now,
-		Location: time.UTC,
-		GOOS:     "linux",
-		GOARCH:   "amd64",
-		Build:    buildinfo.Resolve(buildinfo.Info{}),
+		Getenv:      func(string) string { return "" },
+		UserHomeDir: func() (string, error) { return "/home/milos", nil },
+		Stdin:       strings.NewReader(""),
+		Term:        &FakeTerm{},
+		Text:        text.MustNew("linux"),
+		Now:         (&FakeClock{Time: time.Date(2026, 11, 14, 10, 21, 0, 0, time.UTC)}).Now,
+		Location:    time.UTC,
+		GOOS:        "linux",
+		GOARCH:      "amd64",
+		Build:       buildinfo.Resolve(buildinfo.Info{}),
 	}
 	for _, opt := range opts {
 		opt(&deps)
@@ -53,11 +55,15 @@ func WithTerm(t *FakeTerm) Option {
 	return func(d *cli.Deps) { d.Term = t }
 }
 
-// WithPlatform sets GOOS and GOARCH and loads the catalog for that GOOS.
+// WithPlatform sets GOOS and GOARCH, loads the catalog for that GOOS and gives the user a home
+// directory in that OS's style (C:\Users\milos on windows); set UserHomeDir afterwards to change it.
 func WithPlatform(goos, goarch string) Option {
 	return func(d *cli.Deps) {
 		d.GOOS, d.GOARCH = goos, goarch
 		d.Text = text.MustNew(goos)
+		if goos == "windows" {
+			d.UserHomeDir = func() (string, error) { return `C:\Users\milos`, nil }
+		}
 	}
 }
 

@@ -21,14 +21,48 @@ flags_label = "Flags:"
 [command.help]
 short = "Help for any command"
 
+[command.env]
+short = "Show the environment variables the CLI reads"
+long = '''Print every environment variable the CLI reads, what it controls, whether it is set and the value in effect.
+A variable that is not set shows the default in effect, which can come from the config file or the build.
+Secrets are reported as set, never shown. Works offline and changes nothing.'''
+
 [command.completion]
 short = "Generate shell completion scripts"
 long = "Generate the completion script for the given shell and print it to stdout."
 unsupported_shell = "unsupported shell \"{shell}\"; use bash, zsh, fish or powershell"
 
+[env]
+not_set = "not set"
+not_set_using = "not set, using {value}"
+set_to = "set to {value}"
+set_hidden = "set, value hidden"
+colors_off = "set, colors are off"
+colors_follow = "not set, colors follow the terminal"
+home_unavailable = "not set, and your home directory could not be determined"
+
+[env.purpose]
+api_url = "Address of the backend; wins over the address stored by connect and the built-in one."
+home = "Directory for the config file and other local state."
+token = "Access token to use instead of the stored one; never shown."
+passphrase = "Passphrase that unlocks a passphrase-protected token without asking; never shown."
+default_chat = "Chat that notifications go to when none is named."
+default_platform = "Platform (telegram or whatsapp) whose latest chat receives notifications when no chat is named."
+no_color = "Turns colors off when set to any value."
+
 [error]
 line = "error: {message}"
 unexpected = "unexpected internal error"
+home_unavailable = "could not determine your home directory; set THE_AGENT_CLI_HOME"
+home_unusable = "cannot use the home directory {path}: {reason}"
+config_unreadable = "could not read {path}: {reason}; fix or delete the file"
+config_unwritable = "could not write {path}: {reason}"
+no_api_url = "no backend URL is configured; set THE_AGENT_CLI_API_URL"
+api_url_insecure = "invalid API URL \"{url}\": use https (http is allowed only for localhost)"
+api_url_credentials = "invalid API URL \"{url}\": remove the user name and password from the URL"
+api_url_extras = "invalid API URL \"{url}\": remove the query string and the fragment"
+api_url_malformed = "invalid API URL \"{url}\": use a web address like https://agent.example.com"
+invalid_platform = "invalid THE_AGENT_CLI_DEFAULT_PLATFORM \"{value}\": use telegram or whatsapp"
 unknown_command = "unknown command \"{command}\" for \"{path}\""
 unknown_help_topic = "unknown help topic \"{topic}\""
 aborted = "Aborted."

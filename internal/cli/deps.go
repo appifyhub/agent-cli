@@ -13,15 +13,16 @@ import (
 // Deps is the only seam of the program: everything that touches the outside world comes through here,
 // so every command runs the same way in tests and in production.
 type Deps struct {
-	Getenv   func(string) string
-	Stdin    io.Reader
-	Stdout   io.Writer
-	Stderr   io.Writer
-	Term     term.Terminal
-	Text     *text.Catalog
-	Now      func() time.Time
-	Location *time.Location
-	GOOS     string
-	GOARCH   string
-	Build    buildinfo.Info
+	Getenv      func(string) string
+	UserHomeDir func() (string, error)
+	Stdin       io.Reader
+	Stdout      io.Writer
+	Stderr      io.Writer
+	Term        term.Terminal
+	Text        *text.Catalog
+	Now         func() time.Time
+	Location    *time.Location
+	GOOS        string
+	GOARCH      string
+	Build       buildinfo.Info
 }

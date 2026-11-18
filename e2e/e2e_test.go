@@ -63,18 +63,17 @@ func binary(t *testing.T, name string) string {
 	return path
 }
 
-// run executes the binary with piped streams, without any THE_AGENT_CLI_* variable from the caller,
-// and with a home directory that must stay absent: informational commands write nothing.
-func run(t *testing.T, bin string, args ...string) result {
+// execute runs the binary with piped streams and the given extra variables, without any THE_AGENT_CLI_*
+// variable from the caller, and checks that the output is plain UTF-8 text.
+func execute(t *testing.T, bin string, env []string, args ...string) result {
 	t.Helper()
-	home := filepath.Join(t.TempDir(), "home")
 	cmd := exec.CommandContext(t.Context(), bin, args...)
 	for _, kv := range os.Environ() {
 		if !strings.HasPrefix(kv, "THE_AGENT_CLI_") {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}
-	cmd.Env = append(cmd.Env, "THE_AGENT_CLI_HOME="+home)
+	cmd.Env = append(cmd.Env, env...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	r := result{}
@@ -96,10 +95,30 @@ func run(t *testing.T, bin string, args ...string) result {
 			t.Errorf("%v: output is not valid UTF-8: %q", args, out)
 		}
 	}
+	return r
+}
+
+// run executes the binary with a home directory that must stay absent: informational commands write nothing.
+func run(t *testing.T, bin string, args ...string) result {
+	t.Helper()
+	home := filepath.Join(t.TempDir(), "home")
+	r := execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, args...)
 	if _, err := os.Stat(home); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("%v: created the home directory", args)
 	}
 	return r
+}
+
+// builtInURL is the backend address tools/build bakes into a variant, read from tools/variants.
+func builtInURL(t *testing.T, name string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", `. ./tools/variants && load_variant "$1" && printf %s "$VARIANT_API_URL"`, "sh", name)
+	cmd.Dir = ".."
+	out, err := cmd.Output()
+	if err != nil || len(out) == 0 {
+		t.Fatalf("tools/variants gives no backend URL for %s: %v", name, err)
+	}
+	return string(out)
 }
 
 func TestBinaries(t *testing.T) {
@@ -153,6 +172,32 @@ func TestBinaries(t *testing.T) {
 				}
 			})
 
+			t.Run("env", func(t *testing.T) {
+				userHome := t.TempDir()
+				base := []string{"HOME=" + userHome, "USERPROFILE=" + userHome}
+				r := execute(t, bin, base, "env")
+				want := []string{
+					"THE_AGENT_CLI_API_URL: not set, using " + builtInURL(t, name) + "\n",
+					"THE_AGENT_CLI_HOME: not set, using ~" + string(filepath.Separator) + "." + name + "\n",
+				}
+				for _, line := range want {
+					if !strings.Contains(r.stdout, "\n"+line) && !strings.HasPrefix(r.stdout, line) {
+						t.Errorf("env lacks the line %q:\n%s", line, r.stdout)
+					}
+				}
+				if r.code != 0 || r.stderr != "" {
+					t.Errorf("code %d, stderr %q", r.code, r.stderr)
+				}
+
+				r = execute(t, bin, append(base, "THE_AGENT_CLI_API_URL=https://override.example.test/"), "env")
+				if line := "THE_AGENT_CLI_API_URL: set to https://override.example.test\n"; !strings.HasPrefix(r.stdout, line) {
+					t.Errorf("env does not show the override %q:\n%s", line, r.stdout)
+				}
+				if entries, err := os.ReadDir(userHome); err != nil || len(entries) != 0 {
+					t.Errorf("env created files in the user home: %v, %v", entries, err)
+				}
+			})
+
 			t.Run("usage errors exit 2", func(t *testing.T) {
 				cases := []struct {
 					args   []string
@@ -161,6 +206,7 @@ func TestBinaries(t *testing.T) {
 					{[]string{"nope"}, "error: unknown command \"nope\" for \"" + name + "\"\n"},
 					{[]string{"completion", "tcsh"}, "error: unsupported shell \"tcsh\"; use bash, zsh, fish or powershell\n"},
 					{[]string{"--nope"}, ""},
+					{[]string{"env", "extra"}, ""},
 				}
 				for _, c := range cases {
 					r := run(t, bin, c.args...)
