@@ -1,4 +1,4 @@
-.PHONY: build build-all test lint fmt snapshot
+.PHONY: build build-all test e2e lint fmt snapshot
 
 # the generic build, into bin/agent-cli
 build:
@@ -10,6 +10,10 @@ build-all:
 
 test:
 	go test -race -count=1 ./...
+
+# every variant built with tools/build, then the e2e tests run against the binaries
+e2e:
+	sh scripts/e2e.sh
 
 lint:
 	golangci-lint run

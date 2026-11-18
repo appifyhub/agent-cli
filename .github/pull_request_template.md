@@ -26,7 +26,7 @@ List any relevant details for your test configuration.
 
 #### Test Suite
 
-- [ ] `go build ./... && go vet ./... && go test -race -count=1 ./... && golangci-lint run`
+- [ ] `go build ./... && go vet ./... && go test -race -count=1 ./... && golangci-lint run && sh scripts/e2e.sh`
 - [ ] Other: which tests
 
 ## Final checks
