@@ -54,7 +54,7 @@ func TestExitCodesReachTheOS(t *testing.T) {
 		wantStderr string
 	}{
 		{[]string{"--version"}, 0, "agent-cli ", ""},
-		{nil, 0, "agent-cli – command-line access to the agent", ""},
+		{nil, 0, "agent-cli – command-line access to your agent", ""},
 		{[]string{"frobnicate"}, 2, "", "error: unknown command \"frobnicate\" for \"agent-cli\"\n"},
 		{[]string{"completion", "tcsh"}, 2, "", "error: unsupported shell \"tcsh\"; use bash, zsh, fish or powershell\n"},
 	}

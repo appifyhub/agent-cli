@@ -1,0 +1,10 @@
+agent-cli – command-line access to your agent: connect this machine and send notifications to your chats. More at https://agent.appifyhub.com
+Usage: agent-cli <command> [flags]
+
+Commands:
+  completion  Generate shell completion scripts
+  help        Help for any command
+
+Flags: -v/--verbose, -h/--help, --version
+Environment: THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME, NO_COLOR
+Exit codes: 0 ok · 1 failure · 2 usage error · 3 not connected or locked · 4 chat unreachable · 5 insufficient credits · 6 rate limited
