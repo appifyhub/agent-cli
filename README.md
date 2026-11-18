@@ -126,6 +126,12 @@ Each build keeps its own state in `~/.<command name>`, so they can be installed 
 - `make` and a POSIX shell
 - `golangci-lint` and `goreleaser`, in the versions pinned in `.github/workflows/verify.yml`
 
+```bash
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+brew install goreleaser    # only needed for make snapshot
+export PATH="$HOME/go/bin:$PATH"    # where go install puts tools
+```
+
 #### Building
 
 ```bash
