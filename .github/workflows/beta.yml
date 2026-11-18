@@ -1,0 +1,63 @@
+name: Build Beta
+
+on:
+  pull_request:
+    branches:
+      - release
+
+concurrency:
+  group: build-beta-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    uses: ./.github/workflows/verify.yml
+
+  build:
+    name: Build
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout the pull request head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Print build name
+        run: echo "$GITHUB_ACTOR is building '$GITHUB_REPOSITORY' (commit ${{ github.event.pull_request.head.sha }})"
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          install-only: true
+
+      - name: Publish the abot-dev and agent-cli-dev pre-release
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh tools/release beta
+
+      - name: Comment build information
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        run: |
+          NL=$'\n'
+          JOB="[${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+          RELEASE="[${RELEASE_TAG}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG})"
+          NOTIFICATION="Build ${JOB} complete for ${HEAD_SHA}.${NL}${NL}Pre-release: ${RELEASE}${NL}"
+          gh pr comment "$PR_NUMBER" -b "$NOTIFICATION"
