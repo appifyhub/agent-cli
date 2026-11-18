@@ -153,6 +153,7 @@ All tests run offline and on macOS, Linux and Windows:
 
 ```bash
 make test    # go test -race -count=1 ./...
+make e2e     # builds every variant and runs the e2e tests against the binaries
 make lint    # golangci-lint and the final-newline check
 make fmt     # gofumpt and goimports
 ```
