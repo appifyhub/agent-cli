@@ -12,7 +12,7 @@
 
 This repository contains the **complete** codebase of The Agent's command-line client, `agent-cli`.
 
-The CLI connects a machine to your profile and lets scripts and terminals interact with your agent, which is handy for long builds, cron jobs and anything else that should tap you on the shoulder or talk to you. It talks to the [backend](https://github.com/appifyhub/agent-backend)'s CLI endpoints and nothing else.
+The CLI connects a machine to your profile and lets scripts and terminals interact with your agent, which is handy for long builds, cron jobs and anything else that should tap you on the shoulder or talk to you. It talks to the [backend](https://github.com/appifyhub/agent-backend)'s API.
 
 The tool is generic: out of the box it talks to a backend at `http://localhost`, and `THE_AGENT_CLI_API_URL` points it anywhere else, such as your own deployment of the backend. For the hosted service, every release also ships `abot`, the same program with the hosted service's address built in.
 
