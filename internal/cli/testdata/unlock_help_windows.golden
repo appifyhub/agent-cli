@@ -1,0 +1,17 @@
+Decrypt the stored token without contacting the backend. Only a shell assignment goes to stdout; prompts, confirmations and errors go to stderr.
+Apply it in PowerShell with: agent-cli unlock --shell pwsh | Invoke-Expression
+THE_AGENT_CLI_PASSPHRASE supplies the passphrase, otherwise a terminal prompt is required. The default syntax is pwsh; use --shell to choose another shell.
+The exported token is inherited by child processes, not other terminals. Run Remove-Item Env:THE_AGENT_CLI_TOKEN to remove it. Avoid running unlock directly on a terminal or saving its output: the assignment contains your token and may remain in scrollback or files.
+
+Usage: agent-cli unlock
+
+Flags:
+      --shell <string>  Assignment syntax: sh, bash, zsh, fish, pwsh, powershell
+  -h, --help            Print help
+  -v, --verbose         Print diagnostic details to stderr
+
+Examples:
+  agent-cli unlock --shell pwsh | Invoke-Expression
+
+Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE
+Exit codes: 0 ok · 1 local failure · 2 usage error · 3 not connected or locked

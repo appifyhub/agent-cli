@@ -8,6 +8,7 @@ Commands:
   server      Show the health and version of the backend
   chats       List chats and manage the default target
   notify      Send a notification to one of your chats
+  unlock      Unlock a passphrase-protected token for this terminal
   env         Show the environment variables the CLI reads
   completion  Generate shell completion scripts
   help        Help for any command

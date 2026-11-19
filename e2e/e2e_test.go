@@ -524,3 +524,31 @@ func TestNotifyBuilds(t *testing.T) {
 		})
 	}
 }
+
+func TestUnlockBuilds(t *testing.T) {
+	for _, name := range variants(t) {
+		t.Run(name, func(t *testing.T) {
+			bin := binary(t, name)
+			help := run(t, bin, "unlock", "--help")
+			if help.code != 0 || !strings.Contains(help.stdout, "Usage: "+name+" unlock") || !strings.Contains(help.stdout, "THE_AGENT_CLI_PASSPHRASE") {
+				t.Fatal(help)
+			}
+			got := run(t, bin, "unlock")
+			if got.code != 3 || got.stdout != "" || got.stderr != "This CLI is not connected. Run \x60"+name+" connect <KEY>\x60.\n" {
+				t.Fatal(got)
+			}
+			got = run(t, bin, "unlock", "--shell", "csh")
+			if got.code != 2 || got.stdout != "" {
+				t.Fatal(got)
+			}
+			got = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + filepath.Join(t.TempDir(), "absent"), "THE_AGENT_CLI_TOKEN=already-set"}, "unlock")
+			if got.code != 0 || got.stdout != "" || got.stderr != "Already unlocked: THE_AGENT_CLI_TOKEN is set in this environment.\n" {
+				t.Fatal(got)
+			}
+			completion := run(t, bin, "__complete", "unlock", "--shell", "")
+			if completion.code != 0 || !strings.Contains(completion.stdout, "fish\npwsh\npowershell\n") {
+				t.Fatal(completion)
+			}
+		})
+	}
+}

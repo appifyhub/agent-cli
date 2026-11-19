@@ -263,7 +263,7 @@ func TestConnectBackendFailuresPreservePreviousConnection(t *testing.T) {
 		{testkit.Err(401, 4004, "bad"), 1, "invalid connect key"},
 		{testkit.Err(403, 3008, "policies"), 1, "invalid connect key"},
 		{testkit.Err(400, 1043, "bad ttl"), 2, "invalid TTL \"1h30m\": use a single unit, e.g. 90m"},
-		{testkit.Err(400, 1044, "long ttl"), 2, "TTL exceeds the maximum of 2 years"},
+		{testkit.Err(400, 1044, "long ttl"), 2, "TTL exceeds the server's maximum token lifetime"},
 		{testkit.Text(429, "Too Many Requests"), 6, "rate limited; wait a moment and try again"},
 		{testkit.HTML(500), 1, "the server had a problem; try again later"},
 		{testkit.Err(422, 1045, "device"), 1, "the server rejected this machine's details; please report this"},
@@ -683,7 +683,7 @@ func TestStatusFreshAndMissingCredentials(t *testing.T) {
 				}
 			}
 			got := runStatus(t, r)
-			if got.Code != 3 || got.Stderr != "" || got.Stdout != "Not connected.\nGet a connect key from the agent (send /settings, open Command Line), then run `agent-cli connect <KEY>`.\n" {
+			if got.Code != 3 || got.Stderr != "" || got.Stdout != "Not connected.\nGet a connect key from the agent's chat settings, then run `agent-cli connect <KEY>`.\n" {
 				t.Fatal(got)
 			}
 		})
@@ -1161,7 +1161,7 @@ func TestChatsSharedBackendFailures(t *testing.T) {
 			{"server", testkit.HTML(503), 1, "error: the server had a problem; try again later\n", false},
 			{"malformed list", testkit.JSON(200, map[string]any{"chats": []any{}}), 1, "error: unexpected response from the server\n", false},
 			{"chat target", testkit.Err(404, 2002, "missing"), 4, "error: chat unreachable: no such chat; run `agent-cli chats` to list yours\n", false},
-			{"policies", testkit.Err(403, 3008, "policies"), 1, "error: accept the agent's policies first; send /settings to the agent, then try again\n", false},
+			{"policies", testkit.Err(403, 3008, "policies"), 1, "error: accept the agent's policies in chat settings, then try again\n", false},
 		} {
 			t.Run(strings.Join(args, " ")+"/"+c.name, func(t *testing.T) {
 				r := newChatsRig(t, "linux")
@@ -1445,16 +1445,16 @@ func TestNotifyFailures(t *testing.T) {
 		removed                   bool
 	}{
 		{401, 4005, 3, "This CLI is not connected. Run \x60agent-cli connect <KEY>\x60.\n", true},
-		{403, 3010, 4, "error: chat unreachable: the platform refused the message (WhatsApp only allows messages within 24 hours of your last message)\n", false},
+		{403, 3010, 4, "error: chat unreachable: the platform refused the message; try another chat or platform\n", false},
 		{403, 3004, 4, "error: chat unreachable: no private chat found; start a conversation with the agent on Telegram or WhatsApp first\n", false},
 		{403, 3001, 4, "error: chat unreachable: you are not an admin of that chat\n", false},
 		{403, 3009, 4, "error: chat unreachable: you are not an admin of that chat\n", false},
 		{404, 2002, 4, "error: chat unreachable: no such chat; run \x60agent-cli chats\x60 to list yours\n", false},
-		{422, 1034, 5, "error: insufficient credits; top up in the agent's settings (send /settings to the agent)\n", false},
+		{422, 1034, 5, "error: insufficient credits; top up in the agent's chat settings\n", false},
 		{429, 6004, 6, "error: rate limited; wait a moment and try again\n", false},
 		{422, 1046, 2, "error: the message was rejected: it must be between 1 and 4096 characters\n", false},
 		{502, 5018, 1, "error: the platform could not deliver the message; try again later\n", false},
-		{403, 3008, 1, "error: accept the agent's policies first; send /settings to the agent, then try again\n", false},
+		{403, 3008, 1, "error: accept the agent's policies in chat settings, then try again\n", false},
 		{403, 3007, 1, "error: your account is still on the waitlist; try again once the agent has activated it\n", false},
 	} {
 		t.Run(strconv.Itoa(c.backendCode), func(t *testing.T) {
@@ -1533,5 +1533,87 @@ func TestNotifyLockedCredentials(t *testing.T) {
 				t.Fatal(got)
 			}
 		})
+	}
+}
+
+func TestUnlockShells(t *testing.T) {
+	for _, goos := range []string{"linux", "windows"} {
+		for _, shell := range []string{"", "sh", "bash", "zsh", "fish", "pwsh", "powershell"} {
+			t.Run(goos+shell, func(t *testing.T) {
+				r := newRevokeRig(t, "passphrase")
+				r.deps.GOOS = goos
+				r.deps.Text = testkit.NewDeps(testkit.WithPlatform(goos, "amd64")).Text
+				r.vars[config.EnvPassphrase] = "secretphrase"
+				before := statusSnapshot(t, r.home)
+				hits := r.backend.Count()
+				r.terminal.Prompts = nil
+				args := []string{"unlock"}
+				if shell != "" {
+					args = append(args, "--shell", shell)
+				}
+				got := testkit.Run(t, r.deps, args...)
+				want := "export THE_AGENT_CLI_TOKEN='" + connectSecret + "'\n"
+				if shell == "fish" {
+					want = "set -gx THE_AGENT_CLI_TOKEN '" + connectSecret + "'\n"
+				}
+				if shell == "pwsh" || shell == "powershell" || shell == "" && goos == "windows" {
+					want = "$env:THE_AGENT_CLI_TOKEN = '" + connectSecret + "'\n"
+				}
+				if got.Code != 0 || got.Stdout != want || got.Stderr != "✓ Unlocked for this terminal session\n" || r.backend.Count() != hits || statusSnapshot(t, r.home) != before || len(r.terminal.Prompts) != 0 {
+					t.Fatal(got)
+				}
+			})
+		}
+	}
+}
+
+func TestUnlockFailuresAndNotes(t *testing.T) {
+	for _, c := range []struct {
+		name, mode, passphrase, envToken string
+		args                             []string
+		code                             int
+		message                          string
+	}{
+		{"missing", "", "", "", nil, 3, "This CLI is not connected. Run \x60agent-cli connect <KEY>\x60.\n"},
+		{"keychain", "keychain", "", "", nil, 0, "Nothing to unlock: your token is not passphrase-protected.\n"},
+		{"unsafe", "unsafe", "", "", nil, 0, "Nothing to unlock: your token is not passphrase-protected.\n"},
+		{"already", "", "", "set", nil, 0, "Already unlocked: THE_AGENT_CLI_TOKEN is set in this environment.\n"},
+		{"wrong", "passphrase", "wrong", "", nil, 3, "error: incorrect passphrase\n"},
+		{"shell", "", "", "", []string{"--shell", "csh"}, 2, "error: invalid --shell \"csh\": use sh, bash, zsh, fish, pwsh, or powershell\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var r *connectRig
+			if c.mode == "" {
+				r = newConnectRig(t, "linux")
+			} else {
+				r = newRevokeRig(t, c.mode)
+			}
+			r.vars[config.EnvPassphrase] = c.passphrase
+			r.vars[config.EnvToken] = c.envToken
+			r.terminal.Prompts = nil
+			hits := r.backend.Count()
+			got := testkit.Run(t, r.deps, append([]string{"unlock"}, c.args...)...)
+			if got.Code != c.code || got.Stdout != "" || got.Stderr != c.message || r.backend.Count() != hits || len(r.terminal.Prompts) != 0 {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestUnlockPromptAndHint(t *testing.T) {
+	r := newRevokeRig(t, "passphrase")
+	r.terminal.TTYIn = true
+	r.terminal.TTYOut = true
+	r.terminal.Secrets = []string{"secretphrase"}
+	r.terminal.Prompts = nil
+	got := testkit.Run(t, r.deps, "unlock")
+	if got.Code != 0 || got.Stdout != "export THE_AGENT_CLI_TOKEN='"+connectSecret+"'\n" || !strings.Contains(got.Stderr, "eval \"$(agent-cli unlock)\"") || len(r.terminal.Prompts) != 1 || r.terminal.Prompts[0] != "Passphrase: " {
+		t.Fatal(got, r.terminal.Prompts)
+	}
+	r = newRevokeRig(t, "passphrase")
+	r.terminal.Prompts = nil
+	got = testkit.Run(t, r.deps, "unlock")
+	if got.Code != 3 || got.Stdout != "" || !strings.Contains(got.Stderr, "token is locked;") || len(r.terminal.Prompts) != 0 {
+		t.Fatal(got)
 	}
 }

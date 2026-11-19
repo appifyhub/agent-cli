@@ -1,6 +1,6 @@
 Revoke every CLI token for your account, then remove the token stored on this machine. The device identity, backend address and default target are kept.
 Confirmation is requested before unlocking a passphrase-protected token. Use --yes in scripts. THE_AGENT_CLI_TOKEN overrides the stored token; successful revocation removes the stored token too, but rejection of an environment token leaves stored credentials untouched.
-You can also revoke CLI access from the web app's Command Line settings.
+You can also manage CLI access in the agent's chat settings.
 
 Usage: agent-cli revoke-all
 

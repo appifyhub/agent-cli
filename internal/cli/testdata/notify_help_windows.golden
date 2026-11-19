@@ -1,8 +1,8 @@
 Send one quoted message, or read stdin when no argument is given. An argument takes precedence over a pipe. A terminal without a message fails immediately.
-Leading BOM and surrounding whitespace are removed; interior newlines are preserved. Messages must contain 1–4096 characters. Stdin reads at most 16 KiB and is truncated to 4096 characters with a warning; longer arguments are rejected.
+Leading BOM and surrounding whitespace are removed; interior newlines are preserved. Messages must contain 1–4096 characters. Stdin reads at most 16 KiB and is truncated to 4096 characters; longer arguments are rejected.
 Choose --chat or --platform, never both. Flags override THE_AGENT_CLI_DEFAULT_CHAT, then THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Without a target the backend selects your latest private chat.
-Success is silent unless --verbose is set. A balance below 100 credits produces a warning, including on otherwise silent sends.
-If policies are not accepted, send /settings to the agent. Accounts on the waitlist must wait for activation. Notifications are never retried automatically.
+Success is silent unless --verbose is set.
+Notifications are never retried automatically.
 PowerShell 7 pipes UTF-8 by default. In Windows PowerShell 5.1, set $OutputEncoding = [System.Text.UTF8Encoding]::new() before piping non-ASCII text.
 
 Usage: agent-cli notify [<message>]

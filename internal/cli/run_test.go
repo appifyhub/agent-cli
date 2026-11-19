@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -123,6 +125,30 @@ func TestExitCodesAreTheContract(t *testing.T) {
 	for i, code := range got {
 		if code != i {
 			t.Errorf("exit code #%d = %d", i, code)
+		}
+	}
+}
+
+func TestShellAssignmentEscaping(t *testing.T) {
+	value := "a'b\\c;$(echo unsafe)"
+	for _, shell := range []string{"sh", "bash", "zsh", "fish", "pwsh", "powershell"} {
+		got := shellAssignment(shell, value)
+		if !strings.HasSuffix(got, "\n") || strings.Count(got, "\n") != 1 {
+			t.Fatalf("%s: %q", shell, got)
+		}
+		if shell == "pwsh" || shell == "powershell" {
+			if got != "$env:THE_AGENT_CLI_TOKEN = 'a''b\\c;$(echo unsafe)'\n" {
+				t.Fatal(got)
+			}
+		} else if shell == "fish" {
+			if got != "set -gx THE_AGENT_CLI_TOKEN 'a'\\''b\\\\c;$(echo unsafe)'\n" {
+				t.Fatal(got)
+			}
+		} else if runtime.GOOS != "windows" {
+			cmd := exec.CommandContext(t.Context(), "sh", "-c", `eval "$1"; test "$THE_AGENT_CLI_TOKEN" = "$2"`, "sh", got, value)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("%s: %v %s", shell, err, out)
+			}
 		}
 	}
 }

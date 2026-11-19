@@ -123,14 +123,14 @@ rate_limited = "rate limited; wait a moment and try again"
 unexpected_response = "unexpected response from the server"
 server_fault = "the server had a problem; try again later"
 delivery_failed = "the platform could not deliver the message; try again later"
-policies_required = "accept the agent's policies first; send /settings to the agent, then try again"
+policies_required = "accept the agent's policies in chat settings, then try again"
 waitlist = "your account is still on the waitlist; try again once the agent has activated it"
 env_token_rejected = "the token in THE_AGENT_CLI_TOKEN was rejected by the server (expired or revoked)"
 chat_no_private = "chat unreachable: no private chat found; start a conversation with the agent on Telegram or WhatsApp first"
-chat_delivery_refused = "chat unreachable: the platform refused the message (WhatsApp only allows messages within 24 hours of your last message)"
+chat_delivery_refused = "chat unreachable: the platform refused the message; try another chat or platform"
 chat_not_admin = "chat unreachable: you are not an admin of that chat"
 chat_unknown = "chat unreachable: no such chat; run `{name} chats` to list yours"
-insufficient_credits = "insufficient credits; top up in the agent's settings (send /settings to the agent)"
+insufficient_credits = "insufficient credits; top up in the agent's chat settings"
 invalid_connect_key = "invalid connect key"
 device_rejected = "the server rejected this machine's details; please report this"
 server_invalid_platform = "invalid platform; use telegram or whatsapp"
@@ -138,7 +138,7 @@ malformed_chat_id = "malformed chat id; run `{name} chats` to list yours"
 message_rejected = "the message was rejected: it must be between 1 and 4096 characters"
 request_rejected = "the server rejected the request"
 invalid_ttl = "invalid TTL \"{value}\": use a single unit, e.g. 90m"
-ttl_too_long = "TTL exceeds the maximum of 2 years"
+ttl_too_long = "TTL exceeds the server's maximum token lifetime"
 connected_store_failed = "connected, but the token could not be stored: {reason}; the connect key was used, get a new one from the agent"
 
 [store]
@@ -153,13 +153,13 @@ http_error_code = "  (HTTP {status}, code {code})"
 
 [command.connect]
 short = "Connect this machine to your profile using a connect key"
-long = '''Redeem a connect key from your agent's settings (send /settings, open Command Line) to connect this machine to your profile. The key is single-use; a new key is generated after a successful connection.
+long = '''Redeem a connect key from your agent's chat settings to connect this machine to your profile. The key is single-use; a new key is generated after a successful connection.
 Choose --store keychain, passphrase, or unsafe. Without --store, the system keychain is tried first, then an encrypted passphrase file when a terminal or THE_AGENT_CLI_PASSPHRASE is available. Otherwise the command refuses; an explicit mode never silently falls back.
-Passphrase mode asks Choose a passphrase: and Repeat passphrase: on stderr, showing one * per typed character. THE_AGENT_CLI_PASSPHRASE avoids these prompts. The passphrase is never stored. Decryption costs roughly a second per use; unlock once per terminal session to avoid repeating it. THE_AGENT_CLI_TOKEN overrides a stored token for later authenticated calls, not for connect.
+Passphrase mode asks Choose a passphrase: and Repeat passphrase: on stderr, showing one * per typed character. THE_AGENT_CLI_PASSPHRASE avoids these prompts. The passphrase is never stored. Unlock once per terminal session to avoid repeated passphrase entry. THE_AGENT_CLI_TOKEN overrides a stored token for later authenticated calls, not for connect.
 On macOS the system keychain is accessed through /usr/bin/security without access prompts. Any process running as your user can read that item while the keychain is unlocked. Use passphrase mode if that access model is unsuitable. Unsafe mode stores the token as plain text.
 Local state lives in the home directory selected by THE_AGENT_CLI_HOME, otherwise ~/.<command name>. config.toml holds device identity and connection metadata, never secrets; file modes store the token in credentials. Files are owner-readable and writable only where supported.
 --ttl is forwarded to the server, for example 90m, 3mo or 1y; the server decides what is valid. Reconnecting replaces the token; changing users clears the saved default target.
-A successful connection prints its storage location and expiry. A reported balance below 100 credits produces a low-credit warning on stderr without changing success.'''
+A successful connection prints its storage location and expiry.'''
 examples_unix = '''  {name} connect <KEY>
   {name} connect <KEY> --ttl 3mo
   {name} connect <KEY> --store passphrase
@@ -215,7 +215,7 @@ mask = "*"
 short = "Revoke access for all CLIs on all your machines"
 long = '''Revoke every CLI token for your account, then remove the token stored on this machine. The device identity, backend address and default target are kept.
 Confirmation is requested before unlocking a passphrase-protected token. Use --yes in scripts. THE_AGENT_CLI_TOKEN overrides the stored token; successful revocation removes the stored token too, but rejection of an environment token leaves stored credentials untouched.
-You can also revoke CLI access from the web app's Command Line settings.'''
+You can also manage CLI access in the agent's chat settings.'''
 examples = """  {name} revoke-all
   {name} revoke-all --yes"""
 environment = "Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE"
@@ -250,7 +250,7 @@ exit_codes = "Exit codes: 0 locally connected · 1 local state unusable · 2 usa
 
 [status]
 not_connected = '''Not connected.
-Get a connect key from the agent (send /settings, open Command Line), then run `{name} connect <KEY>`.'''
+Get a connect key from the agent's chat settings, then run `{name} connect <KEY>`.'''
 connected = "Connected as {user} ({hostname})"
 connected_environment = "Connected using THE_AGENT_CLI_TOKEN"
 device = "  Device ID: {id}"
@@ -295,7 +295,7 @@ To change the stored default, choose one of --set <chat-id>, --platform telegram
 --set matches the id exactly, ignoring case, against your authenticated chat list and caches the server's id, platform, title and privacy in config.toml. An unknown id leaves the default unchanged. Run {name} chats to find an id.
 --platform accepts either platform in any case and replaces a chat default. --clear removes the stored default, even if none is set. Both work offline without reading credentials or prompting.
 Only the default target is changed; device identity, backend address and connection metadata are preserved. State lives under THE_AGENT_CLI_HOME, otherwise ~/.<command name>.
-THE_AGENT_CLI_DEFAULT_CHAT wins over THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Environment defaults are labelled with their variable name. Changes still update the stored default and warn when an environment variable overrides it.'''
+THE_AGENT_CLI_DEFAULT_CHAT wins over THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Environment defaults are labelled with their variable name. Changes update the stored default, not environment variables.'''
 examples = '''  {name} chats default
   {name} chats default --set 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7
   {name} chats default --platform telegram
@@ -337,15 +337,15 @@ override_warning = "warning: {variable} is set and overrides the stored default"
 [command.notify]
 short = "Send a notification to one of your chats"
 long_unix = '''Send one quoted message, or read stdin when no argument is given. An argument takes precedence over a pipe. A terminal without a message fails immediately.
-Leading BOM and surrounding whitespace are removed; interior newlines are preserved. Messages must contain 1–4096 characters. Stdin reads at most 16 KiB and is truncated to 4096 characters with a warning; longer arguments are rejected.
+Leading BOM and surrounding whitespace are removed; interior newlines are preserved. Messages must contain 1–4096 characters. Stdin reads at most 16 KiB and is truncated to 4096 characters; longer arguments are rejected.
 Choose --chat or --platform, never both. Flags override THE_AGENT_CLI_DEFAULT_CHAT, then THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Without a target the backend selects your latest private chat.
-Success is silent unless --verbose is set. A balance below 100 credits produces a warning, including on otherwise silent sends.
-If policies are not accepted, send /settings to the agent. Accounts on the waitlist must wait for activation. Notifications are never retried automatically.'''
+Success is silent unless --verbose is set.
+Notifications are never retried automatically.'''
 long_windows = '''Send one quoted message, or read stdin when no argument is given. An argument takes precedence over a pipe. A terminal without a message fails immediately.
-Leading BOM and surrounding whitespace are removed; interior newlines are preserved. Messages must contain 1–4096 characters. Stdin reads at most 16 KiB and is truncated to 4096 characters with a warning; longer arguments are rejected.
+Leading BOM and surrounding whitespace are removed; interior newlines are preserved. Messages must contain 1–4096 characters. Stdin reads at most 16 KiB and is truncated to 4096 characters; longer arguments are rejected.
 Choose --chat or --platform, never both. Flags override THE_AGENT_CLI_DEFAULT_CHAT, then THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Without a target the backend selects your latest private chat.
-Success is silent unless --verbose is set. A balance below 100 credits produces a warning, including on otherwise silent sends.
-If policies are not accepted, send /settings to the agent. Accounts on the waitlist must wait for activation. Notifications are never retried automatically.
+Success is silent unless --verbose is set.
+Notifications are never retried automatically.
 PowerShell 7 pipes UTF-8 by default. In Windows PowerShell 5.1, set $OutputEncoding = [System.Text.UTF8Encoding]::new() before piping non-ASCII text.'''
 examples = '''  {name} notify "Build finished"
   {name} notify --chat <chat-id> "Dinner's ready"
@@ -368,3 +368,29 @@ sent = "✓ Sent"
 sent_to = "✓ Sent to {platform} · {title} ({kind})"
 telegram = "Telegram"
 whatsapp = "WhatsApp"
+
+[command.unlock]
+short = "Unlock a passphrase-protected token for this terminal"
+long_unix = '''Decrypt the stored token without contacting the backend. Only a shell assignment goes to stdout; prompts, confirmations and errors go to stderr.
+Apply it in sh, bash or zsh with: eval "$({name} unlock)"
+In fish: {name} unlock --shell fish | source
+THE_AGENT_CLI_PASSPHRASE supplies the passphrase, otherwise a terminal prompt is required. The default syntax is sh; use --shell to choose another shell.
+The exported token is inherited by child processes, not other terminals. Run unset THE_AGENT_CLI_TOKEN to remove it. Avoid running unlock directly on a terminal or saving its output: the assignment contains your token and may remain in scrollback or files.'''
+long_windows = '''Decrypt the stored token without contacting the backend. Only a shell assignment goes to stdout; prompts, confirmations and errors go to stderr.
+Apply it in PowerShell with: {name} unlock --shell pwsh | Invoke-Expression
+THE_AGENT_CLI_PASSPHRASE supplies the passphrase, otherwise a terminal prompt is required. The default syntax is pwsh; use --shell to choose another shell.
+The exported token is inherited by child processes, not other terminals. Run Remove-Item Env:THE_AGENT_CLI_TOKEN to remove it. Avoid running unlock directly on a terminal or saving its output: the assignment contains your token and may remain in scrollback or files.'''
+examples_unix = '''  eval "$({name} unlock)"
+  {name} unlock --shell fish | source'''
+examples_windows = "  {name} unlock --shell pwsh | Invoke-Expression"
+environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE"
+exit_codes = "Exit codes: 0 ok · 1 local failure · 2 usage error · 3 not connected or locked"
+flag_shell = "Assignment syntax: sh, bash, zsh, fish, pwsh, powershell"
+
+[unlock]
+invalid_shell = 'invalid --shell "{shell}": use sh, bash, zsh, fish, pwsh, or powershell'
+already = "Already unlocked: THE_AGENT_CLI_TOKEN is set in this environment."
+nothing = "Nothing to unlock: your token is not passphrase-protected."
+success = "✓ Unlocked for this terminal session"
+hint_unix = 'To apply it to this terminal session, run: eval "$({name} unlock)"'
+hint_windows = "To apply it to this terminal session, run: {name} unlock --shell pwsh | Invoke-Expression"

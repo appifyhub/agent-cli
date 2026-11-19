@@ -3,7 +3,7 @@ To change the stored default, choose one of --set <chat-id>, --platform telegram
 --set matches the id exactly, ignoring case, against your authenticated chat list and caches the server's id, platform, title and privacy in config.toml. An unknown id leaves the default unchanged. Run agent-cli chats to find an id.
 --platform accepts either platform in any case and replaces a chat default. --clear removes the stored default, even if none is set. Both work offline without reading credentials or prompting.
 Only the default target is changed; device identity, backend address and connection metadata are preserved. State lives under THE_AGENT_CLI_HOME, otherwise ~/.<command name>.
-THE_AGENT_CLI_DEFAULT_CHAT wins over THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Environment defaults are labelled with their variable name. Changes still update the stored default and warn when an environment variable overrides it.
+THE_AGENT_CLI_DEFAULT_CHAT wins over THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Environment defaults are labelled with their variable name. Changes update the stored default, not environment variables.
 
 Usage: agent-cli chats default
 
