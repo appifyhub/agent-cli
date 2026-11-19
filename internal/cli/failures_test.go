@@ -96,7 +96,7 @@ func TestCredentialFailureLeavesOtherErrorsAlone(t *testing.T) {
 func TestPresentPrintsTheNotConnectedGuidanceWithoutThePrefix(t *testing.T) {
 	var out bytes.Buffer
 	err := credentialFailure(text.MustNew("linux"), "agent-cli", credentials.ErrNotConnected)
-	if code := Present(&out, text.MustNew("linux"), err); code != ExitNotConnected {
+	if code := Present(&out, text.MustNew("linux"), err, false); code != ExitNotConnected {
 		t.Errorf("exit code %d", code)
 	}
 	if want := "This CLI is not connected. Run `agent-cli connect <KEY>`.\n"; out.String() != want {
@@ -182,7 +182,7 @@ func TestTranslateKeepsExistingFailuresAndUnknownErrors(t *testing.T) {
 
 func TestPresentSilentFailurePrintsNothing(t *testing.T) {
 	var out bytes.Buffer
-	if code := Present(&out, text.MustNew("linux"), &Failure{Code: ExitFailure, Silent: true}); code != ExitFailure || out.Len() != 0 {
+	if code := Present(&out, text.MustNew("linux"), &Failure{Code: ExitFailure, Silent: true}, false); code != ExitFailure || out.Len() != 0 {
 		t.Errorf("code %d, output %q", code, out.String())
 	}
 }

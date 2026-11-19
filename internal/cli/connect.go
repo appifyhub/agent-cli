@@ -123,7 +123,7 @@ func (s *rootState) runConnect(ctx context.Context, key, mode, ttl string, ttlSe
 	if plan.Mode() == credentials.ModePassphrase {
 		output += "\n" + cat.T("connect.unlock_hint", "name", d.Build.Name)
 	}
-	if _, err := fmt.Fprintln(d.Stdout, output); err != nil {
+	if _, err := fmt.Fprintln(d.Stdout, d.styledFirstLine(term.Out, term.Success, output)); err != nil {
 		return err
 	}
 	s.warnLowCredit(connection.CreditBalance)

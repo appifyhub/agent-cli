@@ -6,6 +6,8 @@ import (
 	"runtime/debug"
 
 	"github.com/spf13/cobra"
+
+	"github.com/appifyhub/agent-cli/internal/term"
 )
 
 // Run executes one invocation and returns the process exit code.
@@ -19,12 +21,12 @@ func execute(ctx context.Context, root *cobra.Command, state *rootState, args []
 	deps := state.deps
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			code = Present(deps.Stderr, deps.Text, &Failure{Code: ExitFailure, Message: deps.Text.T("error.unexpected")})
+			code = Present(deps.Stderr, deps.Text, &Failure{Code: ExitFailure, Message: deps.Text.T("error.unexpected")}, deps.colorEnabled(term.Err))
 			if state.verbose {
 				_, _ = fmt.Fprintf(deps.Stderr, "%v\n%s", recovered, debug.Stack())
 			}
 		}
 	}()
 	root.SetArgs(args)
-	return Present(deps.Stderr, deps.Text, root.ExecuteContext(ctx))
+	return Present(deps.Stderr, deps.Text, root.ExecuteContext(ctx), deps.colorEnabled(term.Err))
 }

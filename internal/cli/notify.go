@@ -104,7 +104,7 @@ func (s *rootState) runNotify(ctx context.Context, message, chat, platform strin
 			}
 			line = d.Text.T("notify.sent_to", "platform", platform, "title", title, "kind", kind)
 		}
-		if _, err := fmt.Fprintln(d.Stdout, line); err != nil {
+		if _, err := fmt.Fprintln(d.Stdout, d.styled(term.Out, term.Success, line)); err != nil {
 			return err
 		}
 	}

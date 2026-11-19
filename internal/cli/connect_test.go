@@ -1617,3 +1617,62 @@ func TestUnlockPromptAndHint(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestTerminalColorsRespectEachStream(t *testing.T) {
+	for _, c := range []struct {
+		name                 string
+		outTTY, errTTY, ansi bool
+		noColor, terminal    string
+		outColor, errColor   bool
+	}{
+		{"terminal", true, true, true, "", "xterm", true, true},
+		{"no color", true, true, true, "1", "xterm", false, false},
+		{"empty no color", true, true, true, "", "xterm", true, true},
+		{"dumb", true, true, true, "", "dumb", false, false},
+		{"no ANSI", true, true, false, "", "xterm", false, false},
+		{"pipe stdout", false, true, true, "", "xterm", false, true},
+		{"pipe stderr", true, false, true, "", "xterm", true, false},
+		{"both piped", false, false, true, "", "xterm", false, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			r.terminal.TTYOut = c.outTTY
+			r.terminal.TTYErr = c.errTTY
+			r.terminal.ANSIOK = c.ansi
+			r.vars["NO_COLOR"] = c.noColor
+			r.vars["TERM"] = c.terminal
+			help := testkit.Run(t, r.deps, "notify", "--help")
+			if help.Code != 0 || strings.Contains(help.Stdout, "\x1b[") != c.outColor {
+				t.Fatal(help)
+			}
+			if c.outColor && !strings.Contains(help.Stdout, "\x1b[1;36mUsage:\x1b[0m") {
+				t.Fatal(help)
+			}
+			r.vars[config.EnvDefaultPlatform] = "telegram"
+			result := testkit.Run(t, r.deps, "chats", "default", "--clear")
+			if result.Code != 0 || strings.Contains(result.Stdout, "\x1b[32m") != c.outColor || strings.Contains(result.Stderr, "\x1b[33m") != c.errColor {
+				t.Fatal(result)
+			}
+			plain := strings.NewReplacer("\x1b[32m", "", "\x1b[33m", "", "\x1b[0m", "")
+			if plain.Replace(result.Stdout) != "✓ Default cleared\n" || plain.Replace(result.Stderr) != "warning: THE_AGENT_CLI_DEFAULT_PLATFORM is set and overrides the stored default\n" {
+				t.Fatal(result)
+			}
+			failure := testkit.Run(t, r.deps, "notify", "--chat", "", "hi")
+			if failure.Code != 2 || strings.Contains(failure.Stderr, "\x1b[31m") != c.errColor || failure.Stdout != "" {
+				t.Fatal(failure)
+			}
+		})
+	}
+}
+
+func TestUnlockAssignmentNeverColored(t *testing.T) {
+	r := newRevokeRig(t, "passphrase")
+	r.terminal.TTYOut = true
+	r.terminal.TTYErr = true
+	r.terminal.ANSIOK = true
+	r.vars[config.EnvPassphrase] = "secretphrase"
+	got := testkit.Run(t, r.deps, "unlock")
+	if got.Code != 0 || got.Stdout != "export THE_AGENT_CLI_TOKEN='"+connectSecret+"'\n" || !strings.Contains(got.Stderr, "\x1b[32m✓ Unlocked for this terminal session\x1b[0m") {
+		t.Fatal(got)
+	}
+}

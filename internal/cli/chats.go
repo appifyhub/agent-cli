@@ -209,7 +209,7 @@ func (s *rootState) runChatsSetDefault(ctx context.Context, args []string, platf
 	if err := config.Save(config.Path(home), file); err != nil {
 		return s.failure(err)
 	}
-	if _, err := fmt.Fprintln(d.Stdout, message); err != nil {
+	if _, err := fmt.Fprintln(d.Stdout, d.styled(term.Out, term.Success, message)); err != nil {
 		return err
 	}
 	variable := ""
@@ -219,7 +219,7 @@ func (s *rootState) runChatsSetDefault(ctx context.Context, args []string, platf
 		variable = config.EnvDefaultPlatform
 	}
 	if variable != "" {
-		_, _ = fmt.Fprintln(d.Stderr, cat.T("chats.override_warning", "variable", variable))
+		_, _ = fmt.Fprintln(d.Stderr, d.styled(term.Err, term.Warning, cat.T("chats.override_warning", "variable", variable)))
 	}
 	return nil
 }

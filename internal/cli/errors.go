@@ -31,12 +31,12 @@ func usageError(message string) *Failure {
 // Present is the one place that turns an error into stderr output and an exit code.
 // An aborted prompt prints the abort notice; any other error prints a single "error: " line,
 // and errors that carry no exit code of their own are failures (exit 1).
-func Present(w io.Writer, cat *text.Catalog, err error) int {
+func Present(w io.Writer, cat *text.Catalog, err error, color bool) int {
 	if err == nil {
 		return ExitOK
 	}
 	if errors.Is(err, term.ErrAborted) {
-		_, _ = fmt.Fprintln(w, cat.T("error.aborted"))
+		_, _ = fmt.Fprintln(w, term.Paint(cat.T("error.aborted"), term.Warning, color))
 		return ExitFailure
 	}
 	failure := &Failure{Code: ExitFailure, Message: err.Error()}
@@ -51,6 +51,6 @@ func Present(w io.Writer, cat *text.Catalog, err error) int {
 	if !failure.Bare {
 		message = cat.T("error.line", "message", message)
 	}
-	_, _ = fmt.Fprintln(w, message)
+	_, _ = fmt.Fprintln(w, term.Paint(message, term.Error, color))
 	return failure.Code
 }

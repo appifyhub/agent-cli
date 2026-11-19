@@ -21,7 +21,7 @@ func TestWarnLowCredit(t *testing.T) {
 		{new(-3.5), "warning: low credit balance: -3.50 credits left; top up in the agent's chat settings\n"},
 	} {
 		var out bytes.Buffer
-		s := rootState{deps: Deps{Text: text.MustNew("linux"), Stderr: &out}}
+		s := rootState{deps: Deps{Text: text.MustNew("linux"), Stderr: &out, Term: plainTerminal{}}}
 		s.warnLowCredit(c.balance)
 		if out.String() != c.want {
 			t.Errorf("got %q, want %q", out.String(), c.want)

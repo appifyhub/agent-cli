@@ -26,6 +26,7 @@ func testDeps() (Deps, *bytes.Buffer, *bytes.Buffer) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   &stdout,
 		Stderr:   &stderr,
+		Term:     plainTerminal{},
 		Text:     text.MustNew("linux"),
 		Now:      time.Now,
 		Location: time.UTC,
@@ -33,6 +34,18 @@ func testDeps() (Deps, *bytes.Buffer, *bytes.Buffer) {
 		GOARCH:   "amd64",
 		Build:    buildinfo.Resolve(buildinfo.Info{}),
 	}, &stdout, &stderr
+}
+
+type plainTerminal struct{}
+
+func (plainTerminal) IsTTY(term.Stream) bool { return false }
+func (plainTerminal) ANSI() bool             { return false }
+func (plainTerminal) ReadSecret(context.Context, string) (string, error) {
+	return "", term.ErrAborted
+}
+
+func (plainTerminal) ReadLine(context.Context, string) (string, error) {
+	return "", term.ErrAborted
 }
 
 func runWith(extra *cobra.Command, args ...string) (int, string, string) {
@@ -111,7 +124,7 @@ func TestPresent(t *testing.T) {
 	}
 	for _, c := range cases {
 		var buf bytes.Buffer
-		if code := Present(&buf, cat, c.err); code != c.wantCode {
+		if code := Present(&buf, cat, c.err, false); code != c.wantCode {
 			t.Errorf("%s: code = %d, want %d", c.name, code, c.wantCode)
 		}
 		if buf.String() != c.wantOut {

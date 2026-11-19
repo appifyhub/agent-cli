@@ -62,7 +62,7 @@ func (s *rootState) runUnlock(ctx context.Context, shell string) error {
 	if err != nil {
 		return s.failure(err)
 	}
-	if _, err := fmt.Fprintln(d.Stderr, d.Text.T("unlock.success")); err != nil {
+	if _, err := fmt.Fprintln(d.Stderr, d.styled(term.Err, term.Success, d.Text.T("unlock.success"))); err != nil {
 		return err
 	}
 	if d.Term.IsTTY(term.Out) {

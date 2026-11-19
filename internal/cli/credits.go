@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/appifyhub/agent-cli/internal/render"
+	"github.com/appifyhub/agent-cli/internal/term"
 )
 
 // LowCreditThreshold is the credit balance below which the user is warned.
@@ -14,5 +15,5 @@ func (s *rootState) warnLowCredit(balance *float64) {
 		return
 	}
 	credits := render.Credits(*balance)
-	_, _ = fmt.Fprintln(s.deps.Stderr, s.deps.Text.T("warning.low_credit", "credits", credits))
+	_, _ = fmt.Fprintln(s.deps.Stderr, s.deps.styled(term.Err, term.Warning, s.deps.Text.T("warning.low_credit", "credits", credits)))
 }

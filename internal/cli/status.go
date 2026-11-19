@@ -63,7 +63,7 @@ func (s *rootState) runStatus() error {
 		}
 	}
 	if raw == "" && !connected {
-		if _, err := fmt.Fprintln(d.Stdout, cat.T("status.not_connected", "name", d.Build.Name)); err != nil {
+		if _, err := fmt.Fprintln(d.Stdout, d.styledFirstLine(term.Out, term.Warning, cat.T("status.not_connected", "name", d.Build.Name))); err != nil {
 			return err
 		}
 		return &Failure{Code: ExitNotConnected, Silent: true}
@@ -106,7 +106,11 @@ func (s *rootState) runStatus() error {
 	} else if locked {
 		fmt.Fprintln(&b, cat.T("status.unlock", "name", d.Build.Name))
 	}
-	if _, err := fmt.Fprint(d.Stdout, b.String()); err != nil {
+	style := term.Success
+	if expired || locked {
+		style = term.Warning
+	}
+	if _, err := fmt.Fprint(d.Stdout, d.styledFirstLine(term.Out, style, b.String())); err != nil {
 		return err
 	}
 	if expired || locked {

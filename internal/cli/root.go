@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/appifyhub/agent-cli/internal/term"
 )
 
 // commandOrder is the order of the Commands section of the root help; commands that are not
@@ -139,8 +141,8 @@ func (s *rootState) rootHelp(root *cobra.Command) string {
 
 	var b strings.Builder
 	fmt.Fprintln(&b, cat.T("root.description", "name", build.Name, "product_url", build.ProductURL))
-	fmt.Fprintf(&b, "%s\n\n", cat.T("root.usage", "name", build.Name))
-	fmt.Fprintln(&b, cat.T("root.commands_label"))
+	fmt.Fprintf(&b, "%s\n\n", s.deps.styled(term.Out, term.Heading, cat.T("root.usage", "name", build.Name)))
+	fmt.Fprintln(&b, s.deps.styled(term.Out, term.Heading, cat.T("root.commands_label")))
 	for _, c := range commands {
 		fmt.Fprintf(&b, "  %-*s  %s\n", width, c.Name(), c.Short)
 	}
@@ -158,12 +160,12 @@ func (s *rootState) commandHelp(cmd *cobra.Command) string {
 		description = cmd.Short
 	}
 	fmt.Fprintf(&b, "%s\n\n", description)
-	fmt.Fprintf(&b, "%s %s\n", cat.T("help.usage_label"), usageLine(cmd))
+	fmt.Fprintf(&b, "%s %s\n", s.deps.styled(term.Out, term.Heading, cat.T("help.usage_label")), usageLine(cmd))
 	if lines := flagLines(cmd.LocalFlags(), cmd.InheritedFlags()); len(lines) > 0 {
-		fmt.Fprintf(&b, "\n%s\n%s\n", cat.T("help.flags_label"), strings.Join(lines, "\n"))
+		fmt.Fprintf(&b, "\n%s\n%s\n", s.deps.styled(term.Out, term.Heading, cat.T("help.flags_label")), strings.Join(lines, "\n"))
 	}
 	if cmd.Example != "" {
-		fmt.Fprintf(&b, "\n%s\n%s\n", cat.T("help.examples_label"), cmd.Example)
+		fmt.Fprintf(&b, "\n%s\n%s\n", s.deps.styled(term.Out, term.Heading, cat.T("help.examples_label")), cmd.Example)
 	}
 	fmt.Fprintf(&b, "\n%s\n%s\n", cmd.Annotations[annotationEnvironment], cmd.Annotations[annotationExitCodes])
 	return b.String()

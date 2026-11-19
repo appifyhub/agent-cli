@@ -83,6 +83,6 @@ func (s *rootState) runRevokeAll(ctx context.Context, yes bool) error {
 	} else if !stored {
 		message = cat.T("revoke_all.success_no_local")
 	}
-	_, err = fmt.Fprintln(d.Stdout, message)
+	_, err = fmt.Fprintln(d.Stdout, d.styled(term.Out, term.Success, message))
 	return err
 }

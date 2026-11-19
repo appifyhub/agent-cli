@@ -43,7 +43,7 @@ func (s *rootState) notifyMessage(args []string) (string, error) {
 			}
 			count++
 		}
-		_, _ = fmt.Fprintln(s.deps.Stderr, cat.T("notify.truncated"))
+		_, _ = fmt.Fprintln(s.deps.Stderr, s.deps.styled(term.Err, term.Warning, cat.T("notify.truncated")))
 	}
 	return message, nil
 }
