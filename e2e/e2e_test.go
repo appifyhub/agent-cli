@@ -204,6 +204,12 @@ func TestBinaries(t *testing.T) {
 			})
 
 			t.Run("connect", func(t *testing.T) {
+				for _, args := range [][]string{{"revoke-all", "--help"}, {"help", "revoke-all"}} {
+					r := run(t, bin, args...)
+					if r.code != 0 || !strings.Contains(r.stdout, "Usage: "+name+" revoke-all") || r.stderr != "" {
+						t.Errorf("revoke help: %+v", r)
+					}
+				}
 				for _, args := range [][]string{{"connect", "--help"}, {"help", "connect"}} {
 					r := run(t, bin, args...)
 					if r.code != 0 || !strings.Contains(r.stdout, "Usage: "+name+" connect <KEY>") || r.stderr != "" {
@@ -214,6 +220,10 @@ func TestBinaries(t *testing.T) {
 					t.Errorf("missing key: %+v", r)
 				}
 				backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodDelete && r.URL.Path == "/cli/user/u1/devices" && r.Header.Get("Authorization") == "Bearer test-token" {
+						w.WriteHeader(http.StatusNoContent)
+						return
+					}
 					var request map[string]any
 					if r.Method != http.MethodPost || r.URL.Path != "/cli/connect" || r.Header.Get("Authorization") != "" {
 						w.WriteHeader(http.StatusBadRequest)
@@ -244,6 +254,21 @@ func TestBinaries(t *testing.T) {
 				metadata, err := os.ReadFile(filepath.Join(home, "config.toml"))
 				if err != nil || !strings.Contains(string(metadata), `user_id = 'u1'`) || strings.Contains(string(metadata), "test-token") {
 					t.Errorf("connection metadata: %q, %v", metadata, err)
+				}
+				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "revoke-all")
+				if r.code != 2 || r.stdout != "" || r.stderr != "error: refusing to revoke without confirmation; pass --yes\n" {
+					t.Fatalf("noninteractive revoke: %+v", r)
+				}
+				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "revoke-all", "--yes")
+				if r.code != 0 || r.stdout != "✓ Access revoked for all CLIs. Local token removed.\n" || r.stderr != "" {
+					t.Fatalf("revoke: %+v", r)
+				}
+				if _, err := os.Stat(filepath.Join(home, "credentials")); !os.IsNotExist(err) {
+					t.Error("revoke kept credentials")
+				}
+				metadata, err = os.ReadFile(filepath.Join(home, "config.toml"))
+				if err != nil || strings.Contains(string(metadata), "[token]") || !strings.Contains(string(metadata), "device_id") {
+					t.Error("incorrect metadata after revoke")
 				}
 			})
 

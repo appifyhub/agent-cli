@@ -210,3 +210,22 @@ low_credit = "warning: low credit balance: {credits} credits left; top up in the
 
 [glyph]
 mask = "*"
+
+[command.revoke_all]
+short = "Revoke access for all CLIs on all your machines"
+long = '''Revoke every CLI token for your account, then remove the token stored on this machine. The device identity, backend address and default target are kept.
+Confirmation is requested before unlocking a passphrase-protected token. Use --yes in scripts. THE_AGENT_CLI_TOKEN overrides the stored token; successful revocation removes the stored token too, but rejection of an environment token leaves stored credentials untouched.
+You can also revoke CLI access from the web app's Command Line settings.'''
+examples = """  {name} revoke-all
+  {name} revoke-all --yes"""
+environment = "Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE"
+exit_codes = "Exit codes: 0 revoked or already revoked · 1 aborted or request/cleanup failure · 2 usage error or confirmation required · 3 not connected or locked · 6 rate limited"
+flag_yes = "Skip confirmation and revoke all CLI access"
+
+[revoke_all]
+confirm = "This revokes access for ALL CLIs on all your machines. Continue? [y/N] "
+confirmation_required = "refusing to revoke without confirmation; pass --yes"
+success = "✓ Access revoked for all CLIs. Local token removed."
+success_no_local = "✓ Access revoked for all CLIs."
+already_revoked = "✓ Already revoked. Local token removed."
+unreachable = "could not reach the server; local token kept"

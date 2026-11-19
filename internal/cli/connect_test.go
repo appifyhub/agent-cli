@@ -3,14 +3,17 @@ package cli_test
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/appifyhub/agent-cli/internal/cli"
 	"github.com/appifyhub/agent-cli/internal/config"
+	"github.com/appifyhub/agent-cli/internal/credentials"
 	"github.com/appifyhub/agent-cli/internal/testkit"
 )
 
@@ -416,6 +419,187 @@ func TestConnectCompletionAndHelp(t *testing.T) {
 		}
 		if _, err := os.Stat(r.home); !os.IsNotExist(err) {
 			t.Error("help created home")
+		}
+	}
+}
+
+func newRevokeRig(t *testing.T, mode string) *connectRig {
+	t.Helper()
+	r := newConnectRig(t, "linux")
+	r.vars[config.EnvPassphrase] = "secretphrase"
+	if result := r.run(t, connectKey, "--store", mode); result.Code != 0 {
+		t.Fatal(result)
+	}
+	delete(r.vars, config.EnvPassphrase)
+	f := r.file(t)
+	f.Default = config.Default{ChatID: "c9"}
+	r.save(t, f)
+	r.keychain.Calls = nil
+	r.backend.Handle("DELETE", "/cli/user/u1/devices", testkit.JSON(200, map[string]string{"status": "OK"}))
+	return r
+}
+
+func TestRevokeConfirmation(t *testing.T) {
+	for _, answer := range []string{"y", "Y", "yes", "YeS", "", "n", "yes please", "eof"} {
+		t.Run(answer, func(t *testing.T) {
+			r := newRevokeRig(t, "keychain")
+			before := r.file(t)
+			r.terminal.TTYIn = true
+			if answer != "eof" {
+				r.terminal.Lines = []string{answer}
+			}
+			got := testkit.Run(t, r.deps, "revoke-all")
+			accepted := strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes")
+			if accepted {
+				if got.Code != 0 || got.Stdout != "✓ Access revoked for all CLIs. Local token removed.\n" || r.backend.Count() != 2 {
+					t.Fatal(got)
+				}
+			} else if got.Code != 1 || got.Stdout != "" || got.Stderr != "Aborted.\n" || r.backend.Count() != 1 || r.file(t) != before || len(r.keychain.Calls) != 0 {
+				t.Fatalf("declined: %+v", got)
+			}
+			if len(r.terminal.Prompts) != 1 || r.terminal.Prompts[0] != "This revokes access for ALL CLIs on all your machines. Continue? [y/N] " {
+				t.Errorf("prompts: %v", r.terminal.Prompts)
+			}
+		})
+	}
+}
+
+func TestRevokePreconditionsAndUnlockOrder(t *testing.T) {
+	t.Run("not connected before confirmation", func(t *testing.T) {
+		r := newConnectRig(t, "linux")
+		got := testkit.Run(t, r.deps, "revoke-all")
+		if got.Code != 3 || got.Stderr != "This CLI is not connected. Run `agent-cli connect <KEY>`.\n" || got.Stdout != "" || len(r.terminal.Prompts) != 0 || r.backend.Count() != 0 {
+			t.Fatal(got)
+		}
+		if _, err := os.Stat(r.home); !os.IsNotExist(err) {
+			t.Error("created state without a connection")
+		}
+	})
+	t.Run("nonterminal requires yes", func(t *testing.T) {
+		r := newRevokeRig(t, "keychain")
+		got := testkit.Run(t, r.deps, "revoke-all")
+		if got.Code != 2 || got.Stderr != "error: refusing to revoke without confirmation; pass --yes\n" || got.Stdout != "" || len(r.keychain.Calls) != 0 || len(r.terminal.Prompts) != 0 || r.backend.Count() != 1 {
+			t.Fatal(got)
+		}
+	})
+	t.Run("locked without terminal", func(t *testing.T) {
+		r := newRevokeRig(t, "passphrase")
+		got := testkit.Run(t, r.deps, "revoke-all", "--yes")
+		if got.Code != 3 || !strings.Contains(got.Stderr, "token is locked;") || got.Stdout != "" || len(r.terminal.Prompts) != 0 || r.backend.Count() != 1 {
+			t.Fatal(got)
+		}
+	})
+	t.Run("confirmation before passphrase", func(t *testing.T) {
+		r := newRevokeRig(t, "passphrase")
+		r.terminal.TTYIn = true
+		r.terminal.Lines = []string{"yes"}
+		r.terminal.Secrets = []string{"secretphrase"}
+		got := testkit.Run(t, r.deps, "revoke-all")
+		if got.Code != 0 || len(r.terminal.Prompts) != 2 || r.terminal.Prompts[1] != "Passphrase: " {
+			t.Fatalf("%+v, prompts %v", got, r.terminal.Prompts)
+		}
+		if _, err := os.Stat(filepath.Join(r.home, credentials.FileName)); !os.IsNotExist(err) {
+			t.Error("credentials survived revocation")
+		}
+	})
+}
+
+func TestRevokeOutcomes(t *testing.T) {
+	for _, c := range []struct {
+		name           string
+		response       testkit.Response
+		code           int
+		stdout, stderr string
+		remove         bool
+	}{
+		{"success", testkit.JSON(200, map[string]string{"status": "OK"}), 0, "✓ Access revoked for all CLIs. Local token removed.\n", "", true},
+		{"revoked", testkit.Err(401, 4005, "revoked"), 0, "✓ Already revoked. Local token removed.\n", "", true},
+		{"forbidden", testkit.Err(403, 3002, "forbidden"), 0, "✓ Already revoked. Local token removed.\n", "", true},
+		{"merged", testkit.Err(404, 2001, "missing"), 0, "✓ Already revoked. Local token removed.\n", "", true},
+		{"server", testkit.HTML(503), 1, "", "error: could not reach the server; local token kept\n", false},
+		{"rate limit", testkit.Text(429, "limited"), 6, "", "error: rate limited; wait a moment and try again\n", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRevokeRig(t, "keychain")
+			before := r.file(t)
+			r.backend.Handle("DELETE", "/cli/user/u1/devices", c.response)
+			got := testkit.Run(t, r.deps, "revoke-all", "--yes")
+			if got.Code != c.code || got.Stdout != c.stdout || got.Stderr != c.stderr || len(r.terminal.Prompts) != 0 {
+				t.Fatal(got)
+			}
+			request := r.backend.Last(t)
+			if request.Method != http.MethodDelete || request.Path != "/cli/user/u1/devices" || request.Header.Get("Authorization") != "Bearer "+connectSecret {
+				t.Errorf("wrong revoke request: %s %s", request.Method, request.Path)
+			}
+			want := before
+			if c.remove {
+				want.Token = config.Token{}
+			}
+			if r.file(t) != want || (r.keychain.Len() == 0) != c.remove {
+				t.Error("incorrect local cleanup")
+			}
+			testkit.AssertNoSecret(t, connectSecret, got.Stdout, got.Stderr)
+		})
+	}
+	t.Run("network", func(t *testing.T) {
+		r := newRevokeRig(t, "keychain")
+		before := r.file(t)
+		r.vars[config.EnvAPIURL] = "http://127.0.0.1:1"
+		got := testkit.Run(t, r.deps, "revoke-all", "--yes")
+		if got.Code != 1 || got.Stderr != "error: could not reach the server; local token kept\n" || got.Stdout != "" || r.file(t) != before || r.keychain.Len() != 1 {
+			t.Fatal(got)
+		}
+	})
+	t.Run("cleanup failure", func(t *testing.T) {
+		r := newRevokeRig(t, "keychain")
+		before := r.file(t)
+		r.keychain.DelErr = errors.New("access denied")
+		got := testkit.Run(t, r.deps, "revoke-all", "--yes")
+		if got.Code != 1 || got.Stdout != "" || !strings.Contains(got.Stderr, "could not remove the token") || r.file(t) != before {
+			t.Fatal(got)
+		}
+	})
+}
+
+func TestRevokeEnvironmentToken(t *testing.T) {
+	for _, stored := range []bool{false, true} {
+		for _, rejected := range []bool{false, true} {
+			t.Run(strings.Join([]string{strconv.FormatBool(stored), strconv.FormatBool(rejected)}, "/"), func(t *testing.T) {
+				r := newConnectRig(t, "linux")
+				if stored {
+					r = newRevokeRig(t, "keychain")
+				}
+				before := r.file(t)
+				secret := testkit.NewToken(testkit.TokenClaims{Sub: "environment-user", Exp: connectExpiry})
+				r.vars[config.EnvToken] = secret
+				response := testkit.JSON(200, map[string]string{"status": "OK"})
+				if rejected {
+					response = testkit.Err(401, 4004, "rejected")
+				}
+				r.backend.Handle("DELETE", "/cli/user/environment-user/devices", response)
+				got := testkit.Run(t, r.deps, "revoke-all", "--yes", "-v")
+				request := r.backend.Last(t)
+				if request.Path != "/cli/user/environment-user/devices" || request.Header.Get("Authorization") != "Bearer "+secret {
+					t.Error("environment identity not used")
+				}
+				if rejected {
+					if got.Code != 3 || !strings.HasSuffix(got.Stderr, "error: the token in THE_AGENT_CLI_TOKEN was rejected by the server (expired or revoked)\n") || got.Stdout != "" || r.file(t) != before {
+						t.Fatal(got)
+					}
+				} else {
+					want := "✓ Access revoked for all CLIs.\n"
+					if stored {
+						want = "✓ Access revoked for all CLIs. Local token removed.\n"
+					}
+					if got.Code != 0 || got.Stdout != want || r.keychain.Len() != 0 || r.file(t).Token != (config.Token{}) {
+						t.Fatal(got)
+					}
+				}
+				if !strings.HasPrefix(got.Stderr, "Calling backend…\n") || len(r.terminal.Prompts) != 0 {
+					t.Fatal(got)
+				}
+				testkit.AssertNoSecret(t, secret, got.Stdout, got.Stderr)
+			})
 		}
 	}
 }

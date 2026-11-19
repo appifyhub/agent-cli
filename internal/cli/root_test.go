@@ -168,7 +168,7 @@ func TestUsageErrorsAreOneLine(t *testing.T) {
 }
 
 func TestCommandHelpGoldens(t *testing.T) {
-	for _, command := range []string{"completion", "env", "server", "help"} {
+	for _, command := range []string{"completion", "env", "server", "help", "revoke-all"} {
 		for _, c := range []struct{ goos, golden string }{{"darwin", "unix"}, {"linux", "unix"}, {"windows", "windows"}} {
 			forms := [][]string{{command, "-h"}, {command, "--help"}, {"help", command}}
 			first := runOn(t, c.goos, forms[0]...)
