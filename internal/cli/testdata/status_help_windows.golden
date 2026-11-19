@@ -1,0 +1,24 @@
+Report this machine's connection, token storage and expiry, default target and backend.
+Works offline: never contacts the server, accesses the keychain, reads or unlocks a stored token, prompts, or changes files. It cannot detect server-side revocation.
+Passphrase storage is reported as locked unless THE_AGENT_CLI_TOKEN is set, even when THE_AGENT_CLI_PASSPHRASE is available. Expired tokens require reconnecting.
+
+Example report (macOS, clock at 2026-11-14 10:21):
+Connected as Example User (workstation)
+  Device ID: 6b8f0d3e-2a1c-4e55-9a37-0c1d2e3f4a5b
+  Token: macOS Keychain, expires 2027-02-14 10:21 (in 3 months)
+  Default chat: 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7 (telegram · Example Chat, private)
+  Backend: http://localhost
+
+Use agent-cli connect <KEY> to connect this machine.
+
+Usage: agent-cli status
+
+Flags:
+  -h, --help     Print help
+  -v, --verbose  Print diagnostic details to stderr
+
+Examples:
+  agent-cli status
+
+Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM
+Exit codes: 0 locally connected · 1 local state unusable · 2 usage or default validation error · 3 not connected, locked, expired or invalid environment token

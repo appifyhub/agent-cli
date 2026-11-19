@@ -35,7 +35,7 @@ type payload struct {
 
 // Parse splits a token into its three segments, decodes the payload and returns its claims.
 // Anything that is not three non-empty dot-separated segments with a JSON object payload holding
-// a string sub and a numeric exp is ErrMalformed; the error never includes any part of the input.
+// a string sub and, when present, a positive numeric exp is ErrMalformed; errors never echo input.
 func Parse(raw string) (Claims, error) {
 	if raw == "" || len(raw) > MaxLength {
 		return Claims{}, ErrMalformed
@@ -56,6 +56,9 @@ func Parse(raw string) (Claims, error) {
 	var p payload
 	if err := json.Unmarshal(body, &p); err != nil || p.Sub == "" {
 		return Claims{}, ErrMalformed
+	}
+	if len(p.Exp) == 0 {
+		return Claims{Subject: p.Sub, DeviceID: p.DeviceID, Hostname: p.Hostname}, nil
 	}
 	seconds, err := expSeconds(p.Exp)
 	if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 {

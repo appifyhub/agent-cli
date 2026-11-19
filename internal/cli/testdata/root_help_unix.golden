@@ -4,6 +4,7 @@ Usage: agent-cli <command> [flags]
 Commands:
   connect     Connect this machine to your profile using a connect key
   revoke-all  Revoke access for all CLIs on all your machines
+  status      Show the connection status of this machine
   server      Show the health and version of the backend
   env         Show the environment variables the CLI reads
   completion  Generate shell completion scripts

@@ -204,6 +204,15 @@ func TestBinaries(t *testing.T) {
 			})
 
 			t.Run("connect", func(t *testing.T) {
+				for _, args := range [][]string{{"status", "--help"}, {"help", "status"}} {
+					r := run(t, bin, args...)
+					if r.code != 0 || !strings.Contains(r.stdout, "Usage: "+name+" status") || r.stderr != "" {
+						t.Errorf("status help: %+v", r)
+					}
+				}
+				if r := run(t, bin, "status"); r.code != 3 || r.stderr != "" || !strings.Contains(r.stdout, "`"+name+" connect <KEY>`") {
+					t.Errorf("fresh status: %+v", r)
+				}
 				for _, args := range [][]string{{"revoke-all", "--help"}, {"help", "revoke-all"}} {
 					r := run(t, bin, args...)
 					if r.code != 0 || !strings.Contains(r.stdout, "Usage: "+name+" revoke-all") || r.stderr != "" {
@@ -255,6 +264,14 @@ func TestBinaries(t *testing.T) {
 				if err != nil || !strings.Contains(string(metadata), `user_id = 'u1'`) || strings.Contains(string(metadata), "test-token") {
 					t.Errorf("connection metadata: %q, %v", metadata, err)
 				}
+				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "status", "-v")
+				if r.code != 0 || r.stderr != "" || !strings.Contains(r.stdout, "Connected as Tester (") || !strings.Contains(r.stdout, "(NOT encrypted)") || !strings.Contains(r.stdout, "  Backend: "+backend.URL+"\n") || strings.Contains(r.stdout, "test-token") {
+					t.Fatalf("offline status: %+v", r)
+				}
+				afterStatus, err := os.ReadFile(filepath.Join(home, "config.toml"))
+				if err != nil || string(afterStatus) != string(metadata) {
+					t.Error("status changed config")
+				}
 				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "revoke-all")
 				if r.code != 2 || r.stdout != "" || r.stderr != "error: refusing to revoke without confirmation; pass --yes\n" {
 					t.Fatalf("noninteractive revoke: %+v", r)
@@ -269,6 +286,10 @@ func TestBinaries(t *testing.T) {
 				metadata, err = os.ReadFile(filepath.Join(home, "config.toml"))
 				if err != nil || strings.Contains(string(metadata), "[token]") || !strings.Contains(string(metadata), "device_id") {
 					t.Error("incorrect metadata after revoke")
+				}
+				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "status")
+				if r.code != 3 || !strings.HasPrefix(r.stdout, "Not connected.\n") || r.stderr != "" {
+					t.Fatalf("status after revoke: %+v", r)
 				}
 			})
 
