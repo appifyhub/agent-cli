@@ -333,3 +333,38 @@ unknown_chat = 'chat "{id}" is not one of your chats; run `{name} chats` to list
 invalid_platform = 'invalid --platform "{value}": use telegram or whatsapp'
 choose_form = "choose one of --set <chat-id>, --platform, or --clear, or omit flags to show the default"
 override_warning = "warning: {variable} is set and overrides the stored default"
+
+[command.notify]
+short = "Send a notification to one of your chats"
+long_unix = '''Send one quoted message, or read stdin when no argument is given. An argument takes precedence over a pipe. A terminal without a message fails immediately.
+Leading BOM and surrounding whitespace are removed; interior newlines are preserved. Messages must contain 1–4096 characters. Stdin reads at most 16 KiB and is truncated to 4096 characters with a warning; longer arguments are rejected.
+Choose --chat or --platform, never both. Flags override THE_AGENT_CLI_DEFAULT_CHAT, then THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Without a target the backend selects your latest private chat.
+Success is silent unless --verbose is set. A balance below 100 credits produces a warning, including on otherwise silent sends.
+If policies are not accepted, send /settings to the agent. Accounts on the waitlist must wait for activation. Notifications are never retried automatically.'''
+long_windows = '''Send one quoted message, or read stdin when no argument is given. An argument takes precedence over a pipe. A terminal without a message fails immediately.
+Leading BOM and surrounding whitespace are removed; interior newlines are preserved. Messages must contain 1–4096 characters. Stdin reads at most 16 KiB and is truncated to 4096 characters with a warning; longer arguments are rejected.
+Choose --chat or --platform, never both. Flags override THE_AGENT_CLI_DEFAULT_CHAT, then THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Without a target the backend selects your latest private chat.
+Success is silent unless --verbose is set. A balance below 100 credits produces a warning, including on otherwise silent sends.
+If policies are not accepted, send /settings to the agent. Accounts on the waitlist must wait for activation. Notifications are never retried automatically.
+PowerShell 7 pipes UTF-8 by default. In Windows PowerShell 5.1, set $OutputEncoding = [System.Text.UTF8Encoding]::new() before piping non-ASCII text.'''
+examples = '''  {name} notify "Build finished"
+  {name} notify --chat <chat-id> "Dinner's ready"
+  {name} notify --platform whatsapp "Deploy done" -v
+  echo "Backup finished" | {name} notify'''
+environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM"
+exit_codes = "Exit codes: 0 sent · 1 delivery or local failure · 2 usage or validation error · 3 not connected, locked or revoked · 4 chat unreachable · 5 insufficient credits · 6 rate limited"
+flag_chat = "Send to this chat ID"
+flag_platform = "Send to your latest private chat on telegram or whatsapp"
+
+[notify]
+single_argument = "pass the message as a single quoted argument"
+missing_message = "no message given; pass it as an argument or pipe it on stdin"
+empty_message = "message is empty"
+long_message = "message is too long (max 4096 characters)"
+truncated = "warning: input truncated to 4096 characters"
+conflicting_targets = "use either --chat or --platform, not both"
+empty_chat = "--chat needs a chat id"
+sent = "✓ Sent"
+sent_to = "✓ Sent to {platform} · {title} ({kind})"
+telegram = "Telegram"
+whatsapp = "WhatsApp"

@@ -459,3 +459,68 @@ func TestBinaries(t *testing.T) {
 		})
 	}
 }
+
+func TestNotifyBuilds(t *testing.T) {
+	for _, name := range variants(t) {
+		t.Run(name, func(t *testing.T) {
+			bin := binary(t, name)
+			help := run(t, bin, "notify", "--help")
+			if help.code != 0 || !strings.Contains(help.stdout, "Usage: "+name+" notify") || !strings.Contains(help.stdout, "THE_AGENT_CLI_DEFAULT_CHAT") {
+				t.Fatal(help)
+			}
+			for _, args := range [][]string{{"notify", "hi"}, {"notify", "--chat", "c1", "hi"}} {
+				got := run(t, bin, args...)
+				if got.code != 3 || got.stderr != "This CLI is not connected. Run \x60"+name+" connect <KEY>\x60.\n" {
+					t.Fatal(got)
+				}
+			}
+			got := run(t, bin, "notify", "--chat", "c1", "--platform", "telegram", "hi")
+			if got.code != 2 {
+				t.Fatal(got)
+			}
+			secret := "header." + base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"neo"}`)) + ".signature"
+			var hits atomic.Int32
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if r.Method != http.MethodPost || r.URL.Path != "/cli/notify/user/neo" || r.Header.Get("Authorization") != "Bearer "+secret || body["message"] != "Backup finished" || body["platform"] != "whatsapp" {
+					t.Errorf("request %s %s %+v", r.Method, r.URL.Path, body)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				_, _ = io.WriteString(w, `{"chat_id":"c1","platform":"whatsapp","title":"Morpheus","is_private":true,"credit_balance":42.37}`)
+			}))
+			defer backend.Close()
+			home := filepath.Join(t.TempDir(), "absent")
+			env := []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=" + backend.URL, "THE_AGENT_CLI_TOKEN=" + secret}
+			got = execute(t, bin, env, "notify", "--platform", "whatsapp", "Backup finished", "-v")
+			warning := "warning: low credit balance: 42.37 credits left; top up in the agent's chat settings\n"
+			if got.code != 0 || got.stdout != "✓ Sent to WhatsApp · Morpheus (private)\n" || got.stderr != "Calling backend…\n"+warning {
+				t.Fatal(got)
+			}
+			cmd := exec.CommandContext(t.Context(), bin, "notify", "--platform", "whatsapp")
+			for _, kv := range os.Environ() {
+				if !strings.HasPrefix(kv, "THE_AGENT_CLI_") {
+					cmd.Env = append(cmd.Env, kv)
+				}
+			}
+			cmd.Env = append(cmd.Env, env...)
+			cmd.Stdin = strings.NewReader("Backup finished\n")
+			var out, errOut strings.Builder
+			cmd.Stdout = &out
+			cmd.Stderr = &errOut
+			if err := cmd.Run(); err != nil || out.String() != "" || errOut.String() != warning {
+				t.Fatalf("pipe: %v %q %q", err, out.String(), errOut.String())
+			}
+			if hits.Load() != 2 {
+				t.Fatal(hits.Load())
+			}
+			if _, err := os.Stat(home); !os.IsNotExist(err) {
+				t.Fatal("notify created state", err)
+			}
+		})
+	}
+}

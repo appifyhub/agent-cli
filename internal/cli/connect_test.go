@@ -1284,3 +1284,254 @@ func TestChatsInvalidEnvironmentDefault(t *testing.T) {
 		}
 	}
 }
+
+func runNotifyTest(t *testing.T, r *connectRig, args ...string) testkit.Result {
+	t.Helper()
+	got := testkit.Run(t, r.deps, append([]string{"notify"}, args...)...)
+	testkit.AssertNoSecret(t, connectSecret, got.Stdout, got.Stderr)
+	return got
+}
+
+func TestNotifyTargetPrecedence(t *testing.T) {
+	for _, c := range []struct {
+		name                 string
+		flags                []string
+		envChat, envPlatform string
+		stored               config.Default
+		path, platform       string
+	}{
+		{"explicit chat", []string{"--chat", "c1"}, "c7", "telegram", config.Default{Platform: "whatsapp"}, "/cli/notify/chat/c1", ""},
+		{"explicit platform", []string{"--platform", "WhatsApp"}, "c7", "telegram", config.Default{ChatID: "c9"}, "/cli/notify/user/u1", "whatsapp"},
+		{"environment chat", nil, "c7", "telegram", config.Default{ChatID: "c9"}, "/cli/notify/chat/c7", ""},
+		{"environment platform", nil, "", "whatsapp", config.Default{ChatID: "c9"}, "/cli/notify/user/u1", "whatsapp"},
+		{"stored chat", nil, "", "", config.Default{ChatID: "c9"}, "/cli/notify/chat/c9", ""},
+		{"stored platform", nil, "", "", config.Default{Platform: "telegram"}, "/cli/notify/user/u1", "telegram"},
+		{"no default", nil, "", "", config.Default{}, "/cli/notify/user/u1", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			file := r.file(t)
+			file.Default = c.stored
+			r.save(t, file)
+			r.vars[config.EnvDefaultChat], r.vars[config.EnvDefaultPlatform] = c.envChat, c.envPlatform
+			r.backend.Handle("POST", c.path, testkit.JSON(200, map[string]any{"credit_balance": 500}))
+			got := runNotifyTest(t, r, append(c.flags, "Dinner's ready")...)
+			if got.Code != 0 || got.Stdout != "" || got.Stderr != "" {
+				t.Fatal(got)
+			}
+			request := r.backend.Last(t)
+			var body map[string]any
+			if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body["message"] != "Dinner's ready" {
+				t.Fatal(body)
+			}
+			if strings.Contains(c.path, "/chat/") {
+				if _, ok := body["platform"]; ok {
+					t.Fatal(body)
+				}
+			} else if c.platform == "" {
+				if body["platform"] != nil {
+					t.Fatal(body)
+				}
+			} else if body["platform"] != c.platform {
+				t.Fatal(body)
+			}
+			if r.file(t) != file {
+				t.Fatal("notify changed config")
+			}
+		})
+	}
+}
+
+func TestNotifyMessages(t *testing.T) {
+	for _, c := range []struct {
+		name                 string
+		args                 []string
+		input, want, warning string
+		tty                  bool
+	}{
+		{"argument", []string{"done"}, "ignored", "done", "", false},
+		{"pipe", nil, "\n\ndone\n\n", "done", "", false},
+		{"multiline", []string{"one\ntwo"}, "", "one\ntwo", "", false},
+		{"bom", nil, "\uFEFF hello \n", "hello", "", false},
+		{"invalid utf8", nil, string([]byte{0xff, 'x'}), "\uFFFDx", "", false},
+		{"truncated", nil, strings.Repeat("a", 5000), strings.Repeat("a", 4096), "warning: input truncated to 4096 characters\n", false},
+		{"unicode", nil, strings.Repeat("界", 5000), strings.Repeat("界", 4096), "warning: input truncated to 4096 characters\n", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			r.deps.Stdin = strings.NewReader(c.input)
+			r.terminal.TTYIn = c.tty
+			r.backend.Handle("POST", "/cli/notify/chat/"+chatsFirstID, testkit.Text(204, ""))
+			got := runNotifyTest(t, r, c.args...)
+			if got.Code != 0 || got.Stderr != c.warning || got.Stdout != "" {
+				t.Fatal(got)
+			}
+			var body map[string]any
+			if err := json.Unmarshal([]byte(r.backend.Last(t).Body), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body["message"] != c.want {
+				t.Fatalf("message %q, want %q", body["message"], c.want)
+			}
+		})
+	}
+}
+
+func TestNotifyValidationBeforeAuthentication(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{nil, "no message given; pass it as an argument or pipe it on stdin"},
+		{[]string{"Build", "finished"}, "pass the message as a single quoted argument"},
+		{[]string{"   "}, "message is empty"},
+		{[]string{strings.Repeat("a", 5000)}, "message is too long (max 4096 characters)"},
+		{[]string{"--chat", "c1", "--platform", "telegram", "hi"}, "use either --chat or --platform, not both"},
+		{[]string{"--chat", "", "hi"}, "--chat needs a chat id"},
+		{[]string{"--platform", "slack", "hi"}, "invalid --platform \"slack\": use telegram or whatsapp"},
+	} {
+		t.Run(strings.Join(c.args, " "), func(t *testing.T) {
+			r := newConnectRig(t, "linux")
+			r.terminal.TTYIn = true
+			got := runNotifyTest(t, r, c.args...)
+			if got.Code != 2 || got.Stdout != "" || got.Stderr != "error: "+c.want+"\n" || r.backend.Count() != 0 || len(r.keychain.Calls) != 0 || len(r.terminal.Prompts) != 0 {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestNotifySuccessResponses(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		response testkit.Response
+		verbose  bool
+		out, err string
+	}{
+		{"empty", testkit.Text(204, ""), false, "", ""},
+		{"unreadable", testkit.Text(202, "not json"), true, "✓ Sent\n", "Calling backend…\n"},
+		{"no details", testkit.JSON(200, map[string]any{}), true, "✓ Sent\n", "Calling backend…\n"},
+		{"private", testkit.NotifyOK(testkit.ChatJSON("c1", "whatsapp", stringPointer("Morpheus"), true), 500), true, "✓ Sent to WhatsApp · Morpheus (private)\n", "Calling backend…\n"},
+		{"group low", testkit.NotifyOK(testkit.ChatJSON("c1", "telegram", stringPointer("Dev Team"), false), 42.37), true, "✓ Sent to Telegram · Dev Team (group)\n", "Calling backend…\nwarning: low credit balance: 42.37 credits left; top up in the agent's chat settings\n"},
+		{"silent low", testkit.JSON(200, map[string]any{"credit_balance": 42.37}), false, "", "warning: low credit balance: 42.37 credits left; top up in the agent's chat settings\n"},
+		{"threshold", testkit.JSON(200, map[string]any{"credit_balance": 100}), false, "", ""},
+		{"null balance", testkit.JSON(200, map[string]any{"credit_balance": nil}), false, "", ""},
+		{"string balance", testkit.JSON(200, map[string]any{"credit_balance": "42"}), false, "", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			r.backend.Handle("POST", "/cli/notify/chat/"+chatsFirstID, c.response)
+			args := []string{"hi"}
+			if c.verbose {
+				args = append(args, "-v")
+			}
+			got := runNotifyTest(t, r, args...)
+			if got.Code != 0 || got.Stdout != c.out || got.Stderr != c.err {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func stringPointer(s string) *string { return &s }
+
+func TestNotifyFailures(t *testing.T) {
+	for _, c := range []struct {
+		status, backendCode, exit int
+		message                   string
+		removed                   bool
+	}{
+		{401, 4005, 3, "This CLI is not connected. Run \x60agent-cli connect <KEY>\x60.\n", true},
+		{403, 3010, 4, "error: chat unreachable: the platform refused the message (WhatsApp only allows messages within 24 hours of your last message)\n", false},
+		{403, 3004, 4, "error: chat unreachable: no private chat found; start a conversation with the agent on Telegram or WhatsApp first\n", false},
+		{403, 3001, 4, "error: chat unreachable: you are not an admin of that chat\n", false},
+		{403, 3009, 4, "error: chat unreachable: you are not an admin of that chat\n", false},
+		{404, 2002, 4, "error: chat unreachable: no such chat; run \x60agent-cli chats\x60 to list yours\n", false},
+		{422, 1034, 5, "error: insufficient credits; top up in the agent's settings (send /settings to the agent)\n", false},
+		{429, 6004, 6, "error: rate limited; wait a moment and try again\n", false},
+		{422, 1046, 2, "error: the message was rejected: it must be between 1 and 4096 characters\n", false},
+		{502, 5018, 1, "error: the platform could not deliver the message; try again later\n", false},
+		{403, 3008, 1, "error: accept the agent's policies first; send /settings to the agent, then try again\n", false},
+		{403, 3007, 1, "error: your account is still on the waitlist; try again once the agent has activated it\n", false},
+	} {
+		t.Run(strconv.Itoa(c.backendCode), func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			before := r.file(t)
+			r.backend.Handle("POST", "/cli/notify/chat/"+chatsFirstID, testkit.Err(c.status, c.backendCode, "failure"))
+			got := runNotifyTest(t, r, "hi")
+			if got.Code != c.exit || got.Stdout != "" || got.Stderr != c.message {
+				t.Fatal(got)
+			}
+			if c.removed {
+				before.Token = config.Token{}
+			}
+			if r.file(t) != before || (r.keychain.Len() == 0) != c.removed {
+				t.Fatal("incorrect token removal")
+			}
+		})
+	}
+	r := newConnectRig(t, "linux")
+	got := runNotifyTest(t, r, "hi")
+	if got.Code != 3 || r.backend.Count() != 0 {
+		t.Fatal(got)
+	}
+	r = newChatsRig(t, "linux")
+	r.deps.HTTP = chatsOfflineTransport{}
+	got = runNotifyTest(t, r, "hi")
+	if got.Code != 1 || got.Stderr != "error: could not reach the server\n" {
+		t.Fatal(got)
+	}
+}
+
+type notifyCountingReader struct{ bytes int }
+
+func (r *notifyCountingReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'x'
+	}
+	r.bytes += len(p)
+	return len(p), nil
+}
+
+func TestNotifyBoundedInputAndArgumentPrecedence(t *testing.T) {
+	for _, argument := range []bool{false, true} {
+		r := newChatsRig(t, "linux")
+		reader := &notifyCountingReader{}
+		r.deps.Stdin = reader
+		r.backend.Handle("POST", "/cli/notify/chat/"+chatsFirstID, testkit.Text(204, ""))
+		var args []string
+		if argument {
+			args = []string{"hi"}
+		}
+		got := runNotifyTest(t, r, args...)
+		if got.Code != 0 {
+			t.Fatal(got)
+		}
+		if argument && reader.bytes != 0 || !argument && reader.bytes != 16384 {
+			t.Fatal(reader.bytes)
+		}
+	}
+}
+
+func TestNotifyLockedCredentials(t *testing.T) {
+	for _, goos := range []string{"linux", "windows"} {
+		t.Run(goos, func(t *testing.T) {
+			r := newRevokeRig(t, "passphrase")
+			r.deps.GOOS = goos
+			r.deps.Text = testkit.NewDeps(testkit.WithPlatform(goos, "amd64")).Text
+			r.terminal.Prompts = nil
+			before := r.backend.Count()
+			got := runNotifyTest(t, r, "hi")
+			hint := "eval \"$(agent-cli unlock)\""
+			if goos == "windows" {
+				hint = "agent-cli unlock --shell pwsh | Invoke-Expression"
+			}
+			if got.Code != 3 || got.Stdout != "" || !strings.Contains(got.Stderr, hint) || r.backend.Count() != before || len(r.terminal.Prompts) != 0 {
+				t.Fatal(got)
+			}
+		})
+	}
+}

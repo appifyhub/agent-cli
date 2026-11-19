@@ -66,6 +66,7 @@ func newRoot(deps Deps) (*cobra.Command, *rootState) {
 	root.AddCommand(state.revokeAllCommand())
 	root.AddCommand(state.statusCommand())
 	root.AddCommand(state.chatsCommand())
+	root.AddCommand(state.notifyCommand())
 	root.AddCommand(state.envCommand())
 	root.AddCommand(state.serverCommand())
 	root.AddCommand(state.completionCommand())
