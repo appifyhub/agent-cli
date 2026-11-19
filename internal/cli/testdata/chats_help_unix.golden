@@ -1,0 +1,26 @@
+List the chats you can notify, in the order the backend returns them, with full titles and whether each is private.
+The * marker identifies the effective default chat: THE_AGENT_CLI_DEFAULT_CHAT wins over THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. A platform default marks no row.
+Listing requires a connection or THE_AGENT_CLI_TOKEN. A passphrase-protected token is unlocked using THE_AGENT_CLI_PASSPHRASE or a terminal prompt.
+Use agent-cli chats default to show the effective default offline, or its --set, --platform and --clear flags to change the stored default in config.toml.
+
+Example table:
+  ID                                PLATFORM  TITLE     PRIVATE   (* = default)
+* 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7  telegram  Morpheus  yes
+  9b1c0d2e3f4a5b6c7d8e9f0a1b2c3d4e  whatsapp  Morpheus  yes
+  c0de1234c0de1234c0de1234c0de1234  telegram  Dev Team  no
+
+Usage: agent-cli chats
+
+Flags:
+  -h, --help     Print help
+  -v, --verbose  Print diagnostic details to stderr
+
+Examples:
+  agent-cli chats
+  agent-cli chats default
+  agent-cli chats default --set 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7
+  agent-cli chats default --platform whatsapp
+  agent-cli chats default --clear
+
+Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM
+Exit codes: 0 ok · 1 request or local state failure · 2 usage or validation error · 3 not connected, locked or revoked · 4 chat unreachable · 5 insufficient credits · 6 rate limited

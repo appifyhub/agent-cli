@@ -810,3 +810,477 @@ func TestStatusEnvironmentToken(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+const (
+	chatsFirstID  = "3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7"
+	chatsSecondID = "9b1c0d2e3f4a5b6c7d8e9f0a1b2c3d4e"
+	chatsGroupID  = "c0de1234c0de1234c0de1234c0de1234"
+)
+
+func newChatsRig(t *testing.T, goos string) *connectRig {
+	t.Helper()
+	r := newConnectRig(t, goos)
+	r.save(t, config.File{
+		DeviceID: connectDevice, APIURL: r.backend.URL(),
+		Token:   config.Token{Store: "keychain", UserID: "u1", UserName: "Morpheus", Hostname: "workstation", ExpiresAt: connectExpiry},
+		Default: config.Default{ChatID: chatsFirstID, ChatPlatform: "telegram", ChatTitle: "Morpheus", ChatPrivate: true},
+	})
+	if err := r.keychain.Set(r.deps.Build.Name, connectDevice, connectSecret); err != nil {
+		t.Fatal(err)
+	}
+	r.keychain.Calls = nil
+	private, group := "Morpheus", "Dev Team"
+	r.backend.Handle(http.MethodGet, "/cli/chats", testkit.JSON(200, []map[string]any{
+		testkit.ChatJSON(chatsFirstID, "telegram", &private, true),
+		testkit.ChatJSON(chatsSecondID, "whatsapp", &private, true),
+		testkit.ChatJSON(chatsGroupID, "telegram", &group, false),
+	}))
+	return r
+}
+
+func runChats(t *testing.T, r *connectRig, args ...string) testkit.Result {
+	t.Helper()
+	got := testkit.Run(t, r.deps, append([]string{"chats"}, args...)...)
+	for _, secret := range []string{connectSecret, "secretphrase", r.vars[config.EnvToken]} {
+		if secret != "" {
+			testkit.AssertNoSecret(t, secret, got.Stdout, got.Stderr)
+		}
+	}
+	return got
+}
+
+func TestChatsTableAndHelpSample(t *testing.T) {
+	r := newChatsRig(t, "linux")
+	before := statusSnapshot(t, r.home)
+	got := runChats(t, r)
+	want := "  ID                                PLATFORM  TITLE     PRIVATE   (* = default)\n" +
+		"* " + chatsFirstID + "  telegram  Morpheus  yes\n" +
+		"  " + chatsSecondID + "  whatsapp  Morpheus  yes\n" +
+		"  " + chatsGroupID + "  telegram  Dev Team  no\n"
+	if got.Code != 0 || got.Stdout != want || got.Stderr != "" {
+		t.Fatalf("got %+v; want %q", got, want)
+	}
+	testkit.Golden(t, "chats_table", got.Stdout)
+	request := r.backend.Last(t)
+	if r.backend.Count() != 1 || request.Method != http.MethodGet || request.Path != "/cli/chats" || request.Header.Get("Authorization") != "Bearer "+connectSecret {
+		t.Error("wrong authenticated chat listing request")
+	}
+	if statusSnapshot(t, r.home) != before {
+		t.Error("listing changed local state")
+	}
+	help := runChats(t, r, "--help")
+	if help.Code != 0 || help.Stderr != "" || !strings.Contains(help.Stdout, strings.TrimSuffix(got.Stdout, "\n")) || r.backend.Count() != 1 {
+		t.Error("help sample differs from the actual table or contacted the backend")
+	}
+}
+
+func TestChatsEffectiveDefaultMarker(t *testing.T) {
+	for _, c := range []struct {
+		name, chat, platform string
+		stored               config.Default
+		marked               string
+	}{
+		{"stored chat", "", "", config.Default{ChatID: chatsFirstID}, chatsFirstID},
+		{"environment chat", chatsSecondID, "telegram", config.Default{ChatID: chatsFirstID}, chatsSecondID},
+		{"case insensitive environment chat", strings.ToUpper(chatsSecondID), "", config.Default{ChatID: chatsFirstID}, chatsSecondID},
+		{"stored platform", "", "", config.Default{Platform: "whatsapp"}, ""},
+		{"environment platform", "", "WhatsApp", config.Default{ChatID: chatsFirstID}, ""},
+		{"no default", "", "", config.Default{}, ""},
+		{"unknown default", "missing", "", config.Default{ChatID: chatsFirstID}, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			f := r.file(t)
+			f.Default = c.stored
+			r.save(t, f)
+			r.vars[config.EnvDefaultChat], r.vars[config.EnvDefaultPlatform] = c.chat, c.platform
+			got := runChats(t, r)
+			if got.Code != 0 || got.Stderr != "" {
+				t.Fatal(got)
+			}
+			var marked []string
+			for _, line := range strings.Split(got.Stdout, "\n") {
+				if strings.HasPrefix(line, "* ") {
+					marked = append(marked, strings.Fields(line)[1])
+				}
+			}
+			if c.marked == "" && len(marked) != 0 || c.marked != "" && (len(marked) != 1 || marked[0] != c.marked) {
+				t.Errorf("marked %v, want %q", marked, c.marked)
+			}
+		})
+	}
+}
+
+func TestChatsTitlesPlatformsAndEmptyList(t *testing.T) {
+	longTitle, unsafeTitle := strings.Repeat("界", 80), "\x1b[31mNeo\x1b[0m\n\tTeam\x00"
+	for _, c := range []struct {
+		name, platform, want string
+		title                *string
+	}{
+		{"long title", "telegram", longTitle, &longTitle},
+		{"null title", "whatsapp", "untitled", nil},
+		{"unknown platform", "matrix", "matrix", nil},
+		{"untrusted text", "\x1b[32mmatrix\x1b[0m", "Neo Team", &unsafeTitle},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			r.backend.Handle(http.MethodGet, "/cli/chats", testkit.JSON(200, []map[string]any{testkit.ChatJSON("chat", c.platform, c.title, false)}))
+			got := runChats(t, r)
+			if got.Code != 0 || got.Stderr != "" || !strings.Contains(got.Stdout, c.want) || strings.ContainsAny(got.Stdout, "\x1b\x00\t") || strings.Count(got.Stdout, "\n") != 2 {
+				t.Fatal(got)
+			}
+		})
+	}
+	r := newChatsRig(t, "linux")
+	r.backend.Handle(http.MethodGet, "/cli/chats", testkit.JSON(200, []any{}))
+	got := runChats(t, r)
+	if got.Code != 0 || got.Stderr != "" || got.Stdout != "No chats found. Start a conversation with the agent on Telegram or WhatsApp, then try again.\n" {
+		t.Fatal(got)
+	}
+}
+
+func TestChatsDefaultOffline(t *testing.T) {
+	for _, c := range []struct {
+		name, chat, platform string
+		stored               config.Default
+		line                 string
+	}{
+		{"stored chat", "", "", config.Default{ChatID: chatsFirstID, ChatPlatform: "telegram", ChatTitle: "Morpheus", ChatPrivate: true}, "Default chat: " + chatsFirstID + " (telegram · Morpheus, private)"},
+		{"stored group", "", "", config.Default{ChatID: chatsGroupID, ChatPlatform: "telegram", ChatTitle: "Dev Team"}, "Default chat: " + chatsGroupID + " (telegram · Dev Team, group)"},
+		{"untitled", "", "", config.Default{ChatID: "c1", ChatPlatform: "matrix"}, "Default chat: c1 (matrix · untitled, group)"},
+		{"stored platform", "", "", config.Default{Platform: "whatsapp"}, "Default platform: whatsapp"},
+		{"none", "", "", config.Default{}, "No default chat is set; notifications go to your latest chat."},
+		{"environment chat", "c7", "telegram", config.Default{ChatID: "c1"}, "Default chat: c7 (from THE_AGENT_CLI_DEFAULT_CHAT)"},
+		{"environment platform", "", "Telegram", config.Default{ChatID: "c1"}, "Default platform: telegram (from THE_AGENT_CLI_DEFAULT_PLATFORM)"},
+		{"untrusted cached text", "", "", config.Default{ChatID: "c\x001", ChatPlatform: "\x1b[31mtelegram", ChatTitle: "Neo\n Team\x1b[0m"}, "Default chat: c1 (telegram · Neo Team, group)"},
+		{"untrusted environment chat", "\x1b[31mc7\x00", "", config.Default{}, "Default chat: c7 (from THE_AGENT_CLI_DEFAULT_CHAT)"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			f := r.file(t)
+			f.Default = c.stored
+			r.save(t, f)
+			r.vars[config.EnvDefaultChat], r.vars[config.EnvDefaultPlatform] = c.chat, c.platform
+			r.vars[config.EnvAPIURL], r.vars[config.EnvToken] = "invalid URL", "invalid-token"
+			before := statusSnapshot(t, r.home)
+			got := runChats(t, r, "default", "-v")
+			want := c.line + "\nTip: change it with `agent-cli chats default --set <chat-id> | --platform telegram|whatsapp | --clear`.\n"
+			if got.Code != 0 || got.Stdout != want || got.Stderr != "" {
+				t.Fatalf("got %+v, want %q", got, want)
+			}
+			if r.backend.Count() != 0 || len(r.keychain.Calls) != 0 || len(r.terminal.Prompts) != 0 || statusSnapshot(t, r.home) != before {
+				t.Error("offline default accessed credentials, prompted, called the backend or changed state")
+			}
+		})
+	}
+	r := newConnectRig(t, "linux")
+	if got := runChats(t, r, "default"); got.Code != 0 || got.Stderr != "" || !strings.HasPrefix(got.Stdout, "No default chat is set;") {
+		t.Fatal(got)
+	}
+	if _, err := os.Stat(r.home); !os.IsNotExist(err) || r.backend.Count() != 0 {
+		t.Error("fresh offline default created state or contacted the backend")
+	}
+}
+
+func TestChatsSetDefaultChat(t *testing.T) {
+	for _, c := range []struct {
+		name, id, platform, title, description string
+		private                                bool
+	}{
+		{"canonical private", chatsSecondID, "whatsapp", "Morpheus", "whatsapp · Morpheus, private", true},
+		{"group", chatsGroupID, "telegram", "Dev Team", "telegram · Dev Team, group", false},
+		{"unknown platform and untitled", "c123", "matrix", "", "matrix · untitled, group", false},
+		{"untrusted title", "c456", "telegram", "\x1b[31mNeo\n Team\x1b[0m", "telegram · Neo Team, private", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			before := r.file(t)
+			before.Default = config.Default{Platform: "telegram"}
+			r.save(t, before)
+			r.backend.Handle(http.MethodGet, "/cli/chats", testkit.JSON(200, []map[string]any{testkit.ChatJSON(c.id, c.platform, &c.title, c.private)}))
+			got := runChats(t, r, "default", "--set", strings.ToUpper(c.id))
+			if got.Code != 0 || got.Stdout != "✓ Default chat set to "+c.id+" ("+c.description+")\n" || got.Stderr != "" || r.backend.Count() != 1 {
+				t.Fatal(got)
+			}
+			want := before
+			want.Default = config.Default{ChatID: c.id, ChatPlatform: c.platform, ChatTitle: c.title, ChatPrivate: c.private}
+			if r.file(t) != want {
+				t.Errorf("config %+v, want %+v", r.file(t), want)
+			}
+			secret, present := r.keychain.Secret(r.deps.Build.Name, connectDevice)
+			if !present || secret != connectSecret {
+				t.Error("setting the default changed credentials")
+			}
+		})
+	}
+}
+
+func TestChatsUnknownDefaultPreservesConfig(t *testing.T) {
+	for _, id := range []string{"nope", chatsFirstID[:12], " " + chatsFirstID} {
+		t.Run(id, func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			before := statusSnapshot(t, r.home)
+			got := runChats(t, r, "default", "--set", id)
+			want := "error: chat \"" + id + "\" is not one of your chats; run `agent-cli chats` to list them\n"
+			if got.Code != 2 || got.Stdout != "" || got.Stderr != want || r.backend.Count() != 1 || statusSnapshot(t, r.home) != before {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestChatsOfflineDefaultWrites(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		args   []string
+		stored config.Default
+		want   config.Default
+		line   string
+	}{
+		{"platform replaces chat", []string{"--platform", "WhatsApp"}, config.Default{ChatID: chatsFirstID, ChatPlatform: "telegram", ChatTitle: "Morpheus", ChatPrivate: true}, config.Default{Platform: "whatsapp"}, "✓ Default platform set to whatsapp"},
+		{"telegram replaces platform", []string{"--platform", "TELEGRAM"}, config.Default{Platform: "whatsapp"}, config.Default{Platform: "telegram"}, "✓ Default platform set to telegram"},
+		{"clear chat", []string{"--clear"}, config.Default{ChatID: chatsFirstID}, config.Default{}, "✓ Default cleared"},
+		{"clear platform", []string{"--clear"}, config.Default{Platform: "telegram"}, config.Default{}, "✓ Default cleared"},
+		{"clear nothing", []string{"--clear"}, config.Default{}, config.Default{}, "✓ Default cleared"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newChatsRig(t, "linux")
+			before := r.file(t)
+			before.Default = c.stored
+			r.save(t, before)
+			r.vars[config.EnvAPIURL], r.vars[config.EnvToken] = "invalid URL", "invalid-token"
+			got := runChats(t, r, append([]string{"default"}, c.args...)...)
+			if got.Code != 0 || got.Stdout != c.line+"\n" || got.Stderr != "" {
+				t.Fatal(got)
+			}
+			want := before
+			want.Default = c.want
+			if r.file(t) != want || r.backend.Count() != 0 || len(r.keychain.Calls) != 0 || len(r.terminal.Prompts) != 0 {
+				t.Error("offline default write changed unrelated state or accessed credentials/network")
+			}
+		})
+	}
+	for _, args := range [][]string{{"--platform", "telegram"}, {"--clear"}} {
+		r := newConnectRig(t, "linux")
+		got := runChats(t, r, append([]string{"default"}, args...)...)
+		if got.Code != 0 || got.Stderr != "" || r.backend.Count() != 0 || r.file(t).DeviceID != "" || r.file(t).Token != (config.Token{}) {
+			t.Fatalf("fresh offline write: %+v", got)
+		}
+	}
+}
+
+func TestChatsSetDefaultValidationBeforeEffects(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--set", ""}, "choose one of --set <chat-id>, --platform, or --clear, or omit flags to show the default"},
+		{[]string{"--clear", "--platform", "telegram"}, "choose one of --set <chat-id>, --platform, or --clear, or omit flags to show the default"},
+		{[]string{"--set", chatsFirstID, "--clear"}, "choose one of --set <chat-id>, --platform, or --clear, or omit flags to show the default"},
+		{[]string{"--set", chatsFirstID, "--platform", "telegram"}, "choose one of --set <chat-id>, --platform, or --clear, or omit flags to show the default"},
+		{[]string{"--set", chatsFirstID, "--clear", "--platform", "telegram"}, "choose one of --set <chat-id>, --platform, or --clear, or omit flags to show the default"},
+		{[]string{"--clear=false"}, "choose one of --set <chat-id>, --platform, or --clear, or omit flags to show the default"},
+		{[]string{"--platform", "slack"}, "invalid --platform \"slack\": use telegram or whatsapp"},
+		{[]string{"--platform="}, "invalid --platform \"\": use telegram or whatsapp"},
+	} {
+		t.Run(strings.Join(c.args, " "), func(t *testing.T) {
+			r := newConnectRig(t, "linux")
+			if err := config.EnsureHome(r.home); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(config.Path(r.home), []byte("invalid toml ["), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := statusSnapshot(t, r.home)
+			got := runChats(t, r, append([]string{"default"}, c.args...)...)
+			if got.Code != 2 || got.Stdout != "" || got.Stderr != "error: "+c.want+"\n" || statusSnapshot(t, r.home) != before || r.backend.Count() != 0 || len(r.keychain.Calls) != 0 || len(r.terminal.Prompts) != 0 {
+				t.Fatal(got)
+			}
+		})
+	}
+	for _, args := range [][]string{{"extra"}, {"default", "extra"}, {"set-default", chatsFirstID}} {
+		r := newConnectRig(t, "linux")
+		got := runChats(t, r, args...)
+		if got.Code != 2 || got.Stdout != "" || !strings.HasPrefix(got.Stderr, "error: ") || r.backend.Count() != 0 {
+			t.Fatal(got)
+		}
+		if _, err := os.Stat(r.home); !os.IsNotExist(err) {
+			t.Error("invalid arguments created state")
+		}
+	}
+}
+
+func TestChatsDefaultOverrideWarning(t *testing.T) {
+	for _, c := range []struct{ chat, platform, variable string }{
+		{"c7", "", config.EnvDefaultChat},
+		{"", "whatsapp", config.EnvDefaultPlatform},
+		{"c7", "telegram", config.EnvDefaultChat},
+		{"", "", ""},
+	} {
+		for _, args := range [][]string{{"--platform", "telegram"}, {"--clear"}, {"--set", chatsSecondID}} {
+			t.Run(c.variable+"/"+strings.Join(args, " "), func(t *testing.T) {
+				r := newChatsRig(t, "linux")
+				r.vars[config.EnvDefaultChat], r.vars[config.EnvDefaultPlatform] = c.chat, c.platform
+				got := runChats(t, r, append([]string{"default"}, args...)...)
+				warning := ""
+				if c.variable != "" {
+					warning = "warning: " + c.variable + " is set and overrides the stored default\n"
+				}
+				if got.Code != 0 || got.Stderr != warning {
+					t.Fatal(got)
+				}
+				want := config.Default{}
+				switch args[0] {
+				case "--platform":
+					want.Platform = "telegram"
+				case "--set":
+					want = config.Default{ChatID: chatsSecondID, ChatPlatform: "whatsapp", ChatTitle: "Morpheus", ChatPrivate: true}
+				}
+				if r.file(t).Default != want {
+					t.Error("environment override prevented storing the requested default")
+				}
+			})
+		}
+	}
+}
+
+func TestChatsSharedBackendFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"default", "--set", chatsSecondID}} {
+		for _, c := range []struct {
+			name     string
+			response testkit.Response
+			code     int
+			message  string
+			removed  bool
+		}{
+			{"revoked", testkit.Err(401, 4005, "revoked"), 3, "This CLI is not connected. Run `agent-cli connect <KEY>`.\n", true},
+			{"unauthorized", testkit.Detail(401, "unauthorized"), 3, "This CLI is not connected. Run `agent-cli connect <KEY>`.\n", true},
+			{"forbidden", testkit.Err(403, 3002, "forbidden"), 3, "This CLI is not connected. Run `agent-cli connect <KEY>`.\n", true},
+			{"merged", testkit.Err(404, 2001, "missing"), 3, "This CLI is not connected. Run `agent-cli connect <KEY>`.\n", true},
+			{"rate limited", testkit.Text(429, "limited"), 6, "error: rate limited; wait a moment and try again\n", false},
+			{"server", testkit.HTML(503), 1, "error: the server had a problem; try again later\n", false},
+			{"malformed list", testkit.JSON(200, map[string]any{"chats": []any{}}), 1, "error: unexpected response from the server\n", false},
+			{"chat target", testkit.Err(404, 2002, "missing"), 4, "error: chat unreachable: no such chat; run `agent-cli chats` to list yours\n", false},
+			{"policies", testkit.Err(403, 3008, "policies"), 1, "error: accept the agent's policies first; send /settings to the agent, then try again\n", false},
+		} {
+			t.Run(strings.Join(args, " ")+"/"+c.name, func(t *testing.T) {
+				r := newChatsRig(t, "linux")
+				before := r.file(t)
+				r.backend.Handle(http.MethodGet, "/cli/chats", c.response)
+				got := runChats(t, r, args...)
+				if got.Code != c.code || got.Stdout != "" || got.Stderr != c.message || r.backend.Count() != 1 {
+					t.Fatal(got)
+				}
+				want := before
+				if c.removed {
+					want.Token = config.Token{}
+				}
+				if r.file(t) != want || (r.keychain.Len() == 0) != c.removed {
+					t.Error("incorrect shared authentication cleanup")
+				}
+			})
+		}
+	}
+}
+
+type chatsOfflineTransport struct{}
+
+func (chatsOfflineTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("offline")
+}
+
+func TestChatsConnectionPreconditionsAndNetworkFailure(t *testing.T) {
+	for _, args := range [][]string{nil, {"default", "--set", chatsSecondID}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			r := newConnectRig(t, "linux")
+			got := runChats(t, r, args...)
+			if got.Code != 3 || got.Stdout != "" || got.Stderr != "This CLI is not connected. Run `agent-cli connect <KEY>`.\n" || r.backend.Count() != 0 || len(r.terminal.Prompts) != 0 {
+				t.Fatal(got)
+			}
+			if _, err := os.Stat(r.home); !os.IsNotExist(err) {
+				t.Error("not-connected command created state")
+			}
+			r = newChatsRig(t, "linux")
+			before := statusSnapshot(t, r.home)
+			r.deps.HTTP = chatsOfflineTransport{}
+			got = runChats(t, r, append(args, "-v")...)
+			if got.Code != 1 || got.Stdout != "" || got.Stderr != "Calling backend…\nerror: could not reach the server\n" || statusSnapshot(t, r.home) != before || r.keychain.Len() != 1 {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestChatsEnvironmentAuthentication(t *testing.T) {
+	for _, args := range [][]string{nil, {"default", "--set", chatsSecondID}} {
+		for _, rejected := range []bool{false, true} {
+			t.Run(strings.Join(args, " ")+"/"+strconv.FormatBool(rejected), func(t *testing.T) {
+				r := newChatsRig(t, "linux")
+				before := r.file(t)
+				secret := testkit.NewToken(testkit.TokenClaims{Sub: "neo", Exp: connectExpiry})
+				r.vars[config.EnvToken] = secret
+				if rejected {
+					r.backend.Handle(http.MethodGet, "/cli/chats", testkit.Err(401, 4004, "rejected"))
+				}
+				got := runChats(t, r, append(args, "-v")...)
+				if rejected {
+					if got.Code != 3 || got.Stdout != "" || got.Stderr != "Calling backend…\n  (HTTP 401, code 4004)\nerror: the token in THE_AGENT_CLI_TOKEN was rejected by the server (expired or revoked)\n" || r.file(t) != before {
+						t.Fatal(got)
+					}
+				} else if got.Code != 0 || got.Stdout == "" || got.Stderr != "Calling backend…\n" {
+					t.Fatal(got)
+				}
+				if len(r.keychain.Calls) != 0 || r.keychain.Len() != 1 || r.backend.Last(t).Header.Get("Authorization") != "Bearer "+secret {
+					t.Error("environment token did not bypass stored credentials")
+				}
+			})
+		}
+	}
+}
+
+func TestChatsLockedAndUnlockedCredentials(t *testing.T) {
+	for _, args := range [][]string{nil, {"default", "--set", chatsSecondID}} {
+		for _, unlock := range []string{"locked", "environment", "terminal"} {
+			t.Run(strings.Join(args, " ")+"/"+unlock, func(t *testing.T) {
+				r := newRevokeRig(t, "passphrase")
+				title := "Morpheus"
+				r.backend.Handle(http.MethodGet, "/cli/chats", testkit.JSON(200, []map[string]any{testkit.ChatJSON(chatsSecondID, "whatsapp", &title, true)}))
+				r.terminal.Prompts = nil
+				before := r.backend.Count()
+				switch unlock {
+				case "environment":
+					r.vars[config.EnvPassphrase] = "secretphrase"
+				case "terminal":
+					r.terminal.TTYIn = true
+					r.terminal.Secrets = []string{"secretphrase"}
+				}
+				got := runChats(t, r, args...)
+				if unlock == "locked" {
+					if got.Code != 3 || got.Stdout != "" || !strings.HasPrefix(got.Stderr, "error: token is locked;") || r.backend.Count() != before || len(r.terminal.Prompts) != 0 {
+						t.Fatal(got)
+					}
+				} else if got.Code != 0 || got.Stderr != "" || r.backend.Count() != before+1 {
+					t.Fatal(got)
+				}
+				if unlock == "terminal" && (len(r.terminal.Prompts) != 1 || r.terminal.Prompts[0] != "Passphrase: ") {
+					t.Errorf("prompts %v", r.terminal.Prompts)
+				}
+				if unlock == "environment" && len(r.terminal.Prompts) != 0 {
+					t.Error("environment passphrase prompted")
+				}
+			})
+		}
+	}
+}
+
+func TestChatsInvalidEnvironmentDefault(t *testing.T) {
+	for _, args := range [][]string{nil, {"default"}} {
+		r := newChatsRig(t, "linux")
+		r.vars[config.EnvDefaultPlatform] = "slack"
+		before := statusSnapshot(t, r.home)
+		got := runChats(t, r, args...)
+		if got.Code != 2 || got.Stdout != "" || got.Stderr != "error: invalid THE_AGENT_CLI_DEFAULT_PLATFORM \"slack\": use telegram or whatsapp\n" || r.backend.Count() != 0 || len(r.keychain.Calls) != 0 || statusSnapshot(t, r.home) != before {
+			t.Fatal(got)
+		}
+	}
+}

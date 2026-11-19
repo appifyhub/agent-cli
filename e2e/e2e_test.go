@@ -3,6 +3,7 @@
 package e2e_test
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -290,6 +291,115 @@ func TestBinaries(t *testing.T) {
 				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "status")
 				if r.code != 3 || !strings.HasPrefix(r.stdout, "Not connected.\n") || r.stderr != "" {
 					t.Fatalf("status after revoke: %+v", r)
+				}
+			})
+
+			t.Run("chats", func(t *testing.T) {
+				for _, path := range [][]string{{"chats"}, {"chats", "default"}} {
+					viaHelp := run(t, bin, append([]string{"help"}, path...)...)
+					viaFlag := run(t, bin, append(append([]string{}, path...), "--help")...)
+					if viaHelp.code != 0 || viaHelp != viaFlag || viaHelp.stderr != "" || !strings.Contains(viaHelp.stdout, "Usage: "+name+" "+strings.Join(path, " ")) {
+						t.Fatalf("chats help: %+v / %+v", viaHelp, viaFlag)
+					}
+					for _, variable := range []string{"THE_AGENT_CLI_DEFAULT_CHAT", "THE_AGENT_CLI_DEFAULT_PLATFORM"} {
+						if !strings.Contains(viaHelp.stdout, variable) {
+							t.Errorf("%v help omits %s", path, variable)
+						}
+					}
+				}
+				for _, args := range [][]string{{"chats"}, {"chats", "default", "--set", "c1"}} {
+					got := run(t, bin, args...)
+					if got.code != 3 || got.stdout != "" || got.stderr != "This CLI is not connected. Run `"+name+" connect <KEY>`.\n" {
+						t.Fatalf("not connected: %+v", got)
+					}
+				}
+				for _, args := range [][]string{
+					{"chats", "stray"},
+					{"chats", "default", "stray"},
+					{"chats", "default", "--set", ""},
+					{"chats", "default", "--clear", "--platform", "telegram"},
+					{"chats", "default", "--platform", "slack"},
+				} {
+					got := run(t, bin, args...)
+					if got.code != 2 || got.stdout != "" || !strings.HasPrefix(got.stderr, "error: ") {
+						t.Fatalf("usage validation: %+v", got)
+					}
+				}
+				tip := "Tip: change it with `" + name + " chats default --set <chat-id> | --platform telegram|whatsapp | --clear`.\n"
+				if got := run(t, bin, "chats", "default"); got.code != 0 || got.stderr != "" || got.stdout != "No default chat is set; notifications go to your latest chat.\n"+tip {
+					t.Fatalf("fresh default: %+v", got)
+				}
+				const chatID = "3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7"
+				secret := "header." + base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"neo"}`)) + ".signature"
+				var hits atomic.Int32
+				backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+					hits.Add(1)
+					if request.Method != http.MethodGet || request.URL.Path != "/cli/chats" || request.Header.Get("Authorization") != "Bearer "+secret || !strings.HasPrefix(request.Header.Get("User-Agent"), name+"/") {
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(w, `[{"chat_id":"`+chatID+`","platform":"telegram","title":"Morpheus","is_private":true},{"chat_id":"c2","platform":"matrix","title":null,"is_private":false}]`)
+				}))
+				defer backend.Close()
+				home := filepath.Join(t.TempDir(), "state")
+				env := []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=" + backend.URL, "THE_AGENT_CLI_TOKEN=" + secret}
+				got := execute(t, bin, env, "chats")
+				if got.code != 0 || got.stderr != "" || !strings.Contains(got.stdout, "Morpheus") || !strings.Contains(got.stdout, "matrix") || !strings.Contains(got.stdout, "untitled") || hits.Load() != 1 {
+					t.Fatalf("listing: %+v", got)
+				}
+				if _, err := os.Stat(home); !os.IsNotExist(err) {
+					t.Error("environment-token listing created state")
+				}
+				got = execute(t, bin, env, "chats", "default", "--set", strings.ToUpper(chatID))
+				if got.code != 0 || got.stderr != "" || got.stdout != "✓ Default chat set to "+chatID+" (telegram · Morpheus, private)\n" || hits.Load() != 2 {
+					t.Fatalf("set chat default: %+v", got)
+				}
+				metadata, err := os.ReadFile(filepath.Join(home, "config.toml"))
+				if err != nil || !strings.Contains(string(metadata), chatID) || !strings.Contains(string(metadata), "Morpheus") || strings.Contains(string(metadata), secret) {
+					t.Fatalf("cached chat: %q, %v", metadata, err)
+				}
+				got = execute(t, bin, env, "chats")
+				if got.code != 0 || got.stderr != "" || !strings.Contains(got.stdout, "\n* "+chatID+" ") || hits.Load() != 3 {
+					t.Fatalf("default marker: %+v", got)
+				}
+				got = execute(t, bin, env, "chats", "default", "--set", "nope")
+				if got.code != 2 || got.stdout != "" || got.stderr != "error: chat \"nope\" is not one of your chats; run `"+name+" chats` to list them\n" || hits.Load() != 4 {
+					t.Fatalf("unknown chat: %+v", got)
+				}
+				after, err := os.ReadFile(filepath.Join(home, "config.toml"))
+				if err != nil || string(after) != string(metadata) {
+					t.Error("unknown chat changed the config")
+				}
+				backend.Close()
+				offline := []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=invalid", "THE_AGENT_CLI_TOKEN=invalid"}
+				got = execute(t, bin, offline, "chats", "default", "-v")
+				if got.code != 0 || got.stderr != "" || got.stdout != "Default chat: "+chatID+" (telegram · Morpheus, private)\n"+tip {
+					t.Fatalf("offline cached default: %+v", got)
+				}
+				got = execute(t, bin, offline, "chats", "default", "--platform", "WhatsApp")
+				if got.code != 0 || got.stderr != "" || got.stdout != "✓ Default platform set to whatsapp\n" {
+					t.Fatalf("offline set platform: %+v", got)
+				}
+				got = execute(t, bin, offline, "chats", "default")
+				if got.code != 0 || got.stderr != "" || got.stdout != "Default platform: whatsapp\n"+tip {
+					t.Fatalf("offline platform: %+v", got)
+				}
+				got = execute(t, bin, append(offline, "THE_AGENT_CLI_DEFAULT_CHAT=c7"), "chats", "default", "--clear")
+				if got.code != 0 || got.stdout != "✓ Default cleared\n" || got.stderr != "warning: THE_AGENT_CLI_DEFAULT_CHAT is set and overrides the stored default\n" {
+					t.Fatalf("offline clear with override: %+v", got)
+				}
+				got = execute(t, bin, offline, "chats", "default")
+				if got.code != 0 || got.stderr != "" || got.stdout != "No default chat is set; notifications go to your latest chat.\n"+tip {
+					t.Fatalf("cleared default: %+v", got)
+				}
+				got = execute(t, bin, offline, "chats", "default", "--clear")
+				if got.code != 0 || got.stderr != "" || got.stdout != "✓ Default cleared\n" || hits.Load() != 4 {
+					t.Fatalf("idempotent offline clear: %+v", got)
+				}
+				metadata, err = os.ReadFile(filepath.Join(home, "config.toml"))
+				if err != nil || strings.Contains(string(metadata), "[default]") || strings.Contains(string(metadata), secret) {
+					t.Fatalf("cleared config: %q, %v", metadata, err)
 				}
 			})
 

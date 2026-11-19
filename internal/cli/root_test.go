@@ -168,14 +168,15 @@ func TestUsageErrorsAreOneLine(t *testing.T) {
 }
 
 func TestCommandHelpGoldens(t *testing.T) {
-	for _, command := range []string{"completion", "env", "server", "help", "revoke-all", "status"} {
+	for _, command := range []string{"completion", "env", "server", "help", "revoke-all", "status", "chats", "chats default"} {
 		for _, c := range []struct{ goos, golden string }{{"darwin", "unix"}, {"linux", "unix"}, {"windows", "windows"}} {
-			forms := [][]string{{command, "-h"}, {command, "--help"}, {"help", command}}
+			path := strings.Fields(command)
+			forms := [][]string{append(append([]string{}, path...), "-h"), append(append([]string{}, path...), "--help"), append([]string{"help"}, path...)}
 			first := runOn(t, c.goos, forms[0]...)
 			if first.Code != 0 || first.Stderr != "" {
 				t.Fatalf("%v: %+v", forms[0], first)
 			}
-			testkit.Golden(t, command+"_help_"+c.golden, first.Stdout)
+			testkit.Golden(t, strings.ReplaceAll(command, " ", "_")+"_help_"+c.golden, first.Stdout)
 			for _, args := range forms[1:] {
 				if res := runOn(t, c.goos, args...); res != first {
 					t.Errorf("%v differs from %v:\n%s\n---\n%s", args, forms[0], res.Stdout, first.Stdout)
@@ -208,8 +209,9 @@ func TestEveryCommandHelpListsExamplesEnvironmentAndExitCodes(t *testing.T) {
 	if len(names) < 4 {
 		t.Fatalf("found only %v", names)
 	}
+	names = append(names, "chats default")
 	for _, name := range names {
-		res := runOn(t, "linux", "help", name)
+		res := runOn(t, "linux", append([]string{"help"}, strings.Fields(name)...)...)
 		for _, want := range []string{"\nExamples:\n", "\nEnvironment: ", "\nExit codes: "} {
 			if !strings.Contains(res.Stdout, want) {
 				t.Errorf("help of %q lacks %q:\n%s", name, strings.TrimSpace(want), res.Stdout)
@@ -225,7 +227,15 @@ func TestInformationalCommandsLeaveTheHomeMissing(t *testing.T) {
 	t.Chdir(root)
 
 	for _, args := range [][]string{
-		{"--version"}, {"--help"}, {"help", "completion"}, {"completion", "bash"}, {}, {"completion", "tcsh"},
+		{"--version"},
+		{"--help"},
+		{"help", "completion"},
+		{"completion", "bash"},
+		{},
+		{"completion", "tcsh"},
+		{"chats", "--help"},
+		{"chats", "default", "--help"},
+		{"chats", "default"},
 	} {
 		testkit.Run(t, deps, args...)
 	}
@@ -234,5 +244,33 @@ func TestInformationalCommandsLeaveTheHomeMissing(t *testing.T) {
 	}
 	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
 		t.Errorf("commands wrote files: %v, %v", entries, err)
+	}
+}
+
+func TestChatsPlatformCompletionAndBuildNamedHelp(t *testing.T) {
+	r := newConnectRig(t, "linux")
+	got := testkit.Run(t, r.deps, "__complete", "chats", "default", "--platform", "")
+	if got.Code != 0 || got.Stdout != "telegram\nwhatsapp\n:4\n" || r.backend.Count() != 0 || len(r.keychain.Calls) != 0 || len(r.terminal.Prompts) != 0 {
+		t.Fatal(got)
+	}
+	if _, err := os.Stat(r.home); !os.IsNotExist(err) {
+		t.Error("completion created state")
+	}
+	for _, name := range []string{"agent-cli", "agent-cli-dev"} {
+		r.deps.Build.Name = name
+		for _, path := range [][]string{{"chats"}, {"chats", "default"}} {
+			help := testkit.Run(t, r.deps, append([]string{"help"}, path...)...)
+			if help.Code != 0 || help.Stderr != "" || !strings.Contains(help.Stdout, "Usage: "+name+" "+strings.Join(path, " ")) {
+				t.Fatal(help)
+			}
+			for _, variable := range []string{"THE_AGENT_CLI_DEFAULT_CHAT", "THE_AGENT_CLI_DEFAULT_PLATFORM"} {
+				if !strings.Contains(help.Stdout, variable) {
+					t.Errorf("%v help omits %s", path, variable)
+				}
+			}
+			if strings.Contains(help.Stdout, "agent.cloud.appifyhub.com") {
+				t.Error("chats help embeds a hosted backend URL")
+			}
+		}
 	}
 }

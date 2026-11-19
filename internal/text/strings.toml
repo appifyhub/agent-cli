@@ -270,3 +270,66 @@ backend = "  Backend: {url}"
 reconnect = "  Run `{name} connect <KEY>` to connect again."
 unlock_unix = '  To unlock: eval "$({name} unlock)"'
 unlock_windows = "  To unlock: {name} unlock --shell pwsh | Invoke-Expression"
+
+[command.chats]
+short = "List chats and manage the default target"
+long = '''List the chats you can notify, in the order the backend returns them, with full titles and whether each is private.
+The * marker identifies the effective default chat: THE_AGENT_CLI_DEFAULT_CHAT wins over THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. A platform default marks no row.
+Listing requires a connection or THE_AGENT_CLI_TOKEN. A passphrase-protected token is unlocked using THE_AGENT_CLI_PASSPHRASE or a terminal prompt.
+Use {name} chats default to show the effective default offline, or its --set, --platform and --clear flags to change the stored default in config.toml.
+
+Example table:
+{sample}'''
+examples = '''  {name} chats
+  {name} chats default
+  {name} chats default --set 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7
+  {name} chats default --platform whatsapp
+  {name} chats default --clear'''
+environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM"
+exit_codes = "Exit codes: 0 ok · 1 request or local state failure · 2 usage or validation error · 3 not connected, locked or revoked · 4 chat unreachable · 5 insufficient credits · 6 rate limited"
+
+[command.chats_default]
+short = "Show, set or clear the default target"
+long = '''Without flags, show the effective default chat, platform, or latest-chat fallback and a tip. This works offline without reading credentials, prompting, contacting the backend or writing files.
+To change the stored default, choose one of --set <chat-id>, --platform telegram|whatsapp, or --clear.
+--set matches the id exactly, ignoring case, against your authenticated chat list and caches the server's id, platform, title and privacy in config.toml. An unknown id leaves the default unchanged. Run {name} chats to find an id.
+--platform accepts either platform in any case and replaces a chat default. --clear removes the stored default, even if none is set. Both work offline without reading credentials or prompting.
+Only the default target is changed; device identity, backend address and connection metadata are preserved. State lives under THE_AGENT_CLI_HOME, otherwise ~/.<command name>.
+THE_AGENT_CLI_DEFAULT_CHAT wins over THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Environment defaults are labelled with their variable name. Changes still update the stored default and warn when an environment variable overrides it.'''
+examples = '''  {name} chats default
+  {name} chats default --set 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7
+  {name} chats default --platform telegram
+  {name} chats default --platform WhatsApp
+  {name} chats default --clear'''
+environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM"
+exit_codes = "Exit codes: 0 ok · 1 request or local state failure · 2 usage, unknown chat or invalid platform · 3 not connected, locked or revoked · 4 chat unreachable · 5 insufficient credits · 6 rate limited"
+flag_set = "Set the stored default to one of your chat IDs"
+flag_platform = "Use the latest private chat on telegram or whatsapp"
+flag_clear = "Remove the stored default target"
+
+[chats]
+table_id = "ID"
+table_platform = "PLATFORM"
+table_title = "TITLE"
+table_private = "PRIVATE"
+table_legend = "(* = default)"
+yes = "yes"
+no = "no"
+untitled = "untitled"
+sample_private_title = "Morpheus"
+sample_group_title = "Dev Team"
+empty = "No chats found. Start a conversation with the agent on Telegram or WhatsApp, then try again."
+chat_description = "{id} ({platform} · {title}, {kind})"
+default_chat = "Default chat: {chat}"
+default_platform = "Default platform: {platform}"
+default_none = "No default chat is set; notifications go to your latest chat."
+default_environment_chat = "Default chat: {id} (from THE_AGENT_CLI_DEFAULT_CHAT)"
+default_environment_platform = "Default platform: {platform} (from THE_AGENT_CLI_DEFAULT_PLATFORM)"
+default_tip = "Tip: change it with `{name} chats default --set <chat-id> | --platform telegram|whatsapp | --clear`."
+set_chat = "✓ Default chat set to {chat}"
+set_platform = "✓ Default platform set to {platform}"
+cleared = "✓ Default cleared"
+unknown_chat = 'chat "{id}" is not one of your chats; run `{name} chats` to list them'
+invalid_platform = 'invalid --platform "{value}": use telegram or whatsapp'
+choose_form = "choose one of --set <chat-id>, --platform, or --clear, or omit flags to show the default"
+override_warning = "warning: {variable} is set and overrides the stored default"
