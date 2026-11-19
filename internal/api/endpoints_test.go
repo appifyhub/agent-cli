@@ -10,7 +10,7 @@ import (
 )
 
 func connectRequest() api.ConnectRequest {
-	return api.ConnectRequest{ConnectKey: "K7Q2-M9XA-P3RT", DeviceID: "dev-1", Hostname: "milos-mbp", OS: "darwin"}
+	return api.ConnectRequest{ConnectKey: "K7Q2-M9XA-P3RT", DeviceID: "dev-1", Hostname: "morpheus-mbp", OS: "darwin"}
 }
 
 func bodyOf(t *testing.T, r testkit.Request) map[string]any {
@@ -24,16 +24,16 @@ func bodyOf(t *testing.T, r testkit.Request) map[string]any {
 
 func TestConnect(t *testing.T) {
 	b := testkit.NewBackend(t)
-	b.Handle("POST", "/cli/connect", testkit.ConnectOK(secretToken, expiry, "u1", "Milos", 12.5))
+	b.Handle("POST", "/cli/connect", testkit.ConnectOK(secretToken, expiry, "u1", "Morpheus", 12.5))
 	got, err := newClient(b).Connect(t.Context(), connectRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Token != secretToken || !got.ExpiresAt.Equal(expiry) || got.UserID != "u1" || got.UserDisplayName != "Milos" || got.CreditBalance == nil || *got.CreditBalance != 12.5 {
+	if got.Token != secretToken || !got.ExpiresAt.Equal(expiry) || got.UserID != "u1" || got.UserDisplayName != "Morpheus" || got.CreditBalance == nil || *got.CreditBalance != 12.5 {
 		t.Errorf("got %+v", got)
 	}
 	body := bodyOf(t, b.Last(t))
-	want := map[string]any{"connect_key": "K7Q2-M9XA-P3RT", "device_id": "dev-1", "hostname": "milos-mbp", "os": "darwin"}
+	want := map[string]any{"connect_key": "K7Q2-M9XA-P3RT", "device_id": "dev-1", "hostname": "morpheus-mbp", "os": "darwin"}
 	if len(body) != len(want) {
 		t.Errorf("body %v must not carry a ttl_as_text without --ttl", body)
 	}
@@ -46,7 +46,7 @@ func TestConnect(t *testing.T) {
 
 func TestConnectForwardsTheTTLVerbatim(t *testing.T) {
 	b := testkit.NewBackend(t)
-	b.Handle("POST", "/cli/connect", testkit.ConnectOK(secretToken, expiry, "u1", "Milos", 1))
+	b.Handle("POST", "/cli/connect", testkit.ConnectOK(secretToken, expiry, "u1", "Morpheus", 1))
 	r := connectRequest()
 	r.TTL = "1h30m"
 	if _, err := newClient(b).Connect(t.Context(), r); err != nil {
@@ -160,7 +160,7 @@ func TestRevokeAll(t *testing.T) {
 func TestChats(t *testing.T) {
 	b := testkit.NewBackend(t)
 	b.Handle("GET", "/cli/chats", testkit.JSON(200, []any{
-		testkit.ChatJSON("c1", "telegram", ptr("Milos"), true),
+		testkit.ChatJSON("c1", "telegram", ptr("Morpheus"), true),
 		testkit.ChatJSON("c2", "whatsapp", nil, false),
 		map[string]any{"chat_id": "c3", "platform": "telegram", "title": "Team", "is_private": false, "added_later": []int{1}},
 	}))
@@ -168,7 +168,7 @@ func TestChats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []api.Chat{{ID: "c1", Platform: "telegram", Title: "Milos", Private: true}, {ID: "c2", Platform: "whatsapp"}, {ID: "c3", Platform: "telegram", Title: "Team"}}
+	want := []api.Chat{{ID: "c1", Platform: "telegram", Title: "Morpheus", Private: true}, {ID: "c2", Platform: "whatsapp"}, {ID: "c3", Platform: "telegram", Title: "Team"}}
 	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Errorf("got %+v", got)
 	}
@@ -205,12 +205,12 @@ func TestChatsRejectsUnusableAnswers(t *testing.T) {
 
 func TestNotifyUser(t *testing.T) {
 	b := testkit.NewBackend(t)
-	b.Handle("POST", "/cli/notify/user/u1", testkit.NotifyOK(testkit.ChatJSON("c1", "whatsapp", ptr("Milos"), true), 9.25))
+	b.Handle("POST", "/cli/notify/user/u1", testkit.NotifyOK(testkit.ChatJSON("c1", "whatsapp", ptr("Morpheus"), true), 9.25))
 	got, err := newClient(b).NotifyUser(t.Context(), secretToken, "u1", "hi there", "whatsapp")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Chat == nil || *got.Chat != (api.Chat{ID: "c1", Platform: "whatsapp", Title: "Milos", Private: true}) || got.CreditBalance == nil || *got.CreditBalance != 9.25 {
+	if got.Chat == nil || *got.Chat != (api.Chat{ID: "c1", Platform: "whatsapp", Title: "Morpheus", Private: true}) || got.CreditBalance == nil || *got.CreditBalance != 9.25 {
 		t.Errorf("got %+v", got)
 	}
 	body := bodyOf(t, b.Last(t))

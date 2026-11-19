@@ -128,7 +128,7 @@ func TestRender(t *testing.T) {
 		args     []string
 		want     string
 	}{
-		{"hello {name}", []string{"name", "Milos"}, "hello Milos"},
+		{"hello {name}", []string{"name", "Morpheus"}, "hello Morpheus"},
 		{"{a}{b}{a}", []string{"a", "1", "b", "2"}, "121"},
 		{"literal {{braces}} here", nil, "literal {braces} here"},
 		{"{{{name}}}", []string{"name", "x"}, "{x}"},

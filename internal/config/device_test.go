@@ -15,8 +15,8 @@ var (
 
 var mac = config.Machine{
 	MACs:     []string{"3c:22:fb:11:22:33", "a4:83:e7:aa:bb:cc"},
-	Hostname: "milos-mbp",
-	User:     "milos",
+	Hostname: "morpheus-mbp",
+	User:     "morpheus",
 	GOOS:     "darwin",
 	GOARCH:   "arm64",
 }
@@ -28,11 +28,11 @@ func withID(m config.Machine, id string) config.Machine {
 
 func TestDeviceIDFromTheMachineIdentifier(t *testing.T) {
 	m := withID(mac, "5f1c0d2e-1111-2222-3333-444455556666")
-	id := config.DeviceID(m, "/home/milos/.agent-cli")
+	id := config.DeviceID(m, "/home/morpheus/.agent-cli")
 	if !version8.MatchString(id) || !config.ValidDeviceID(id) {
 		t.Fatalf("%q is not a valid derived UUID", id)
 	}
-	if again := config.DeviceID(m, "/home/milos/.agent-cli"); again != id {
+	if again := config.DeviceID(m, "/home/morpheus/.agent-cli"); again != id {
 		t.Errorf("not deterministic: %q then %q", id, again)
 	}
 	if strings.Contains(id, "5f1c0d2e") {
@@ -44,9 +44,9 @@ func TestDeviceIDDiffersPerHomeAndPerMachine(t *testing.T) {
 	a := withID(mac, "machine-a")
 	b := withID(mac, "machine-b")
 	ids := map[string]string{
-		"a, home 1": config.DeviceID(a, "/home/milos/.agent-cli"),
-		"a, home 2": config.DeviceID(a, "/home/milos/.abot"),
-		"b, home 1": config.DeviceID(b, "/home/milos/.agent-cli"),
+		"a, home 1": config.DeviceID(a, "/home/morpheus/.agent-cli"),
+		"a, home 2": config.DeviceID(a, "/home/morpheus/.abot"),
+		"b, home 1": config.DeviceID(b, "/home/morpheus/.agent-cli"),
 	}
 	seen := map[string]string{}
 	for name, id := range ids {

@@ -50,7 +50,7 @@ func newConnectRig(t *testing.T, goos string) *connectRig {
 	d.Keychain = k
 	d.Location = loc
 	d.Now = func() time.Time { return time.Date(2026, 11, 14, 10, 21, 0, 0, loc) }
-	b.Handle("POST", "/cli/connect", testkit.ConnectOK(connectSecret, connectExpiry, "u1", "Milos", 500))
+	b.Handle("POST", "/cli/connect", testkit.ConnectOK(connectSecret, connectExpiry, "u1", "Morpheus", 500))
 	return &connectRig{deps: d, backend: b, keychain: k, terminal: terminal, vars: vars, home: vars[config.EnvHome]}
 }
 
@@ -96,12 +96,12 @@ func TestConnectKeychainOutputs(t *testing.T) {
 		t.Run(goos, func(t *testing.T) {
 			r := newConnectRig(t, goos)
 			result := r.run(t, connectKey, "--ttl", "3mo")
-			want := "✓ Connected as Milos (milos-mbp)\n  Token stored in: " + store + "\n  Expires: 2027-02-14 10:21 (in 3 months)\n  A new connect key was generated for your profile.\n"
+			want := "✓ Connected as Morpheus (morpheus-mbp)\n  Token stored in: " + store + "\n  Expires: 2027-02-14 10:21 (in 3 months)\n  A new connect key was generated for your profile.\n"
 			if result.Code != 0 || result.Stdout != want || result.Stderr != "" {
 				t.Fatalf("got %+v; want %q", result, want)
 			}
 			f := r.file(t)
-			if f.Token.UserID != "u1" || f.Token.Store != "keychain" || f.Token.Hostname != "milos-mbp" || f.APIURL != r.backend.URL() || !f.Token.ExpiresAt.Equal(connectExpiry) {
+			if f.Token.UserID != "u1" || f.Token.Store != "keychain" || f.Token.Hostname != "morpheus-mbp" || f.APIURL != r.backend.URL() || !f.Token.ExpiresAt.Equal(connectExpiry) {
 				t.Errorf("config %+v", f)
 			}
 			if !config.ValidDeviceID(f.DeviceID) {
@@ -143,7 +143,7 @@ func TestConnectFileStores(t *testing.T) {
 				if mode == "passphrase" {
 					suffix = " (encrypted)"
 				}
-				want := "✓ Connected as Milos (milos-mbp)\n  Token stored in: " + path + suffix + "\n  Expires: 2027-02-14 10:21 (in 3 months)\n  A new connect key was generated for your profile.\n"
+				want := "✓ Connected as Morpheus (morpheus-mbp)\n  Token stored in: " + path + suffix + "\n  Expires: 2027-02-14 10:21 (in 3 months)\n  A new connect key was generated for your profile.\n"
 				if mode == "passphrase" {
 					want += hint
 					if len(r.terminal.Prompts) != 2 || r.terminal.Prompts[0] != "Choose a passphrase: " || r.terminal.Prompts[1] != "Repeat passphrase: " {
@@ -353,7 +353,7 @@ func TestConnectPersistenceFailures(t *testing.T) {
 				} else {
 					r.keychain.SetErr = errors.New("store unavailable")
 				}
-				return testkit.ConnectOK(connectSecret, connectExpiry, "u1", "Milos", 500)
+				return testkit.ConnectOK(connectSecret, connectExpiry, "u1", "Morpheus", 500)
 			})
 			result := r.run(t, connectKey, "--store", "keychain")
 			if result.Code != 1 || result.Stdout != "" || !strings.HasPrefix(result.Stderr, "error: ") {
@@ -384,7 +384,7 @@ func TestConnectLowCreditAndVerbose(t *testing.T) {
 		{"lots", ""},
 	} {
 		r := newConnectRig(t, "linux")
-		r.backend.Handle("POST", "/cli/connect", testkit.ConnectOK(connectSecret, connectExpiry, "u1", "Milos", c.balance))
+		r.backend.Handle("POST", "/cli/connect", testkit.ConnectOK(connectSecret, connectExpiry, "u1", "Morpheus", c.balance))
 		result := r.run(t, connectKey, "--store", "unsafe", "-v")
 		if result.Code != 0 || !strings.HasPrefix(result.Stderr, "Calling backend…\n") {
 			t.Errorf("got %+v", result)
@@ -392,7 +392,7 @@ func TestConnectLowCreditAndVerbose(t *testing.T) {
 		if c.warning == "" && result.Stderr != "Calling backend…\n" || c.warning != "" && !strings.Contains(result.Stderr, c.warning) {
 			t.Errorf("wrong warning %q", result.Stderr)
 		}
-		if !strings.HasPrefix(result.Stdout, "✓ Connected as Milos") {
+		if !strings.HasPrefix(result.Stdout, "✓ Connected as Morpheus") {
 			t.Error("warning changed stdout")
 		}
 	}
@@ -601,5 +601,212 @@ func TestRevokeEnvironmentToken(t *testing.T) {
 				testkit.AssertNoSecret(t, secret, got.Stdout, got.Stderr)
 			})
 		}
+	}
+}
+
+func statusRig(t *testing.T, goos, mode string) *connectRig {
+	t.Helper()
+	r := newConnectRig(t, goos)
+	r.vars[config.EnvAPIURL] = "https://agent.cloud.appifyhub.com"
+	r.save(t, config.File{
+		DeviceID: "6b8f0d3e-2a1c-4e55-9a37-0c1d2e3f4a5b",
+		APIURL:   "https://stored.example",
+		Token:    config.Token{Store: mode, UserID: "u1", UserName: "Example User", Hostname: "workstation", ExpiresAt: connectExpiry},
+		Default:  config.Default{ChatID: "3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7", ChatPlatform: "telegram", ChatTitle: "Example Chat", ChatPrivate: true},
+	})
+	if mode != "keychain" {
+		if err := os.WriteFile(filepath.Join(r.home, credentials.FileName), []byte("not-a-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.keychain.GetErr = errors.New("status must not read keychain")
+	return r
+}
+
+func statusSnapshot(t *testing.T, home string) string {
+	t.Helper()
+	entries, err := os.ReadDir(home)
+	if os.IsNotExist(err) {
+		return ""
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot strings.Builder
+	for _, entry := range entries {
+		body, err := os.ReadFile(filepath.Join(home, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot.WriteString(entry.Name())
+		snapshot.WriteByte(0)
+		snapshot.Write(body)
+	}
+	return snapshot.String()
+}
+
+func runStatus(t *testing.T, r *connectRig) testkit.Result {
+	t.Helper()
+	before := statusSnapshot(t, r.home)
+	got := testkit.Run(t, r.deps, "status", "-v")
+	if statusSnapshot(t, r.home) != before || len(r.keychain.Calls) != 0 || len(r.terminal.Prompts) != 0 || r.backend.Count() != 0 {
+		t.Error("status accessed credentials, prompted, contacted network or changed files")
+	}
+	testkit.AssertNoSecret(t, "not-a-token", got.Stdout, got.Stderr)
+	testkit.AssertNoSecret(t, "secretphrase", got.Stdout, got.Stderr)
+	return got
+}
+
+func TestStatusConnectedSample(t *testing.T) {
+	r := statusRig(t, "darwin", "keychain")
+	r.deps.Build.APIURL = r.vars[config.EnvAPIURL]
+	got := runStatus(t, r)
+	want := "Connected as Example User (workstation)\n  Device ID: 6b8f0d3e-2a1c-4e55-9a37-0c1d2e3f4a5b\n  Token: macOS Keychain, expires 2027-02-14 10:21 (in 3 months)\n  Default chat: 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7 (telegram · Example Chat, private)\n  Backend: https://agent.cloud.appifyhub.com\n"
+	if got.Code != 0 || got.Stdout != want || got.Stderr != "" {
+		t.Fatal(got)
+	}
+	testkit.Golden(t, "status_connected", got.Stdout)
+	help := testkit.Run(t, r.deps, "status", "--help")
+	if !strings.Contains(help.Stdout, strings.TrimSuffix(got.Stdout, "\n")) {
+		t.Error("sample in help differs from actual status output")
+	}
+}
+
+func TestStatusFreshAndMissingCredentials(t *testing.T) {
+	for _, mode := range []string{"", "unsafe", "passphrase"} {
+		t.Run(mode, func(t *testing.T) {
+			r := newConnectRig(t, "linux")
+			if mode != "" {
+				r = statusRig(t, "linux", mode)
+				if err := os.Remove(filepath.Join(r.home, credentials.FileName)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := runStatus(t, r)
+			if got.Code != 3 || got.Stderr != "" || got.Stdout != "Not connected.\nGet a connect key from the agent (send /settings, open Command Line), then run `agent-cli connect <KEY>`.\n" {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestStatusStorageAndExpiry(t *testing.T) {
+	for _, c := range []struct {
+		goos, mode, location string
+		code                 int
+	}{
+		{"darwin", "keychain", "macOS Keychain", 0},
+		{"windows", "keychain", "Windows Credential Manager", 0},
+		{"linux", "keychain", "system keyring (Secret Service)", 0},
+		{"linux", "unsafe", "~/.agent-cli/credentials (NOT encrypted)", 0},
+		{"linux", "passphrase", "~/.agent-cli/credentials (encrypted, locked)", 3},
+		{"windows", "passphrase", `~\.agent-cli\credentials (encrypted, locked)`, 3},
+	} {
+		t.Run(c.goos+"/"+c.mode, func(t *testing.T) {
+			r := statusRig(t, c.goos, c.mode)
+			r.vars[config.EnvPassphrase] = "secretphrase"
+			got := runStatus(t, r)
+			if got.Code != c.code || got.Stderr != "" || !strings.Contains(got.Stdout, "  Token: "+c.location+", expires 2027-02-14 10:21 (in 3 months)\n") {
+				t.Fatal(got)
+			}
+			if c.mode == "passphrase" {
+				hint := `  To unlock: eval "$(agent-cli unlock)"`
+				if c.goos == "windows" {
+					hint = "  To unlock: agent-cli unlock --shell pwsh | Invoke-Expression"
+				}
+				if !strings.HasSuffix(got.Stdout, hint+"\n") {
+					t.Fatal(got)
+				}
+			}
+			r.deps.Now = func() time.Time { return connectExpiry.Add(48 * time.Hour) }
+			got = runStatus(t, r)
+			if got.Code != 3 || !strings.Contains(got.Stdout, "expired on 2027-02-14 10:21 (2 days ago)") || !strings.HasSuffix(got.Stdout, "  Run `agent-cli connect <KEY>` to connect again.\n") {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestStatusDefaultsAndBackend(t *testing.T) {
+	for _, c := range []struct {
+		name, chat, platform string
+		stored               config.Default
+		want                 string
+	}{
+		{"group", "", "", config.Default{ChatID: "c9", ChatPlatform: "telegram", ChatTitle: "Dev Team"}, "  Default chat: c9 (telegram · Dev Team, group)"},
+		{"platform", "", "", config.Default{Platform: "whatsapp"}, "  Default platform: whatsapp"},
+		{"none", "", "", config.Default{}, "  Default chat: none (latest chat is used)"},
+		{"env chat", "c7", "telegram", config.Default{ChatID: "c9"}, "  Default chat: c7 (from THE_AGENT_CLI_DEFAULT_CHAT)"},
+		{"env platform", "", "WhatsApp", config.Default{ChatID: "c9"}, "  Default platform: whatsapp (from THE_AGENT_CLI_DEFAULT_PLATFORM)"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := statusRig(t, "linux", "keychain")
+			f := r.file(t)
+			f.Default = c.stored
+			r.save(t, f)
+			r.vars[config.EnvDefaultChat], r.vars[config.EnvDefaultPlatform] = c.chat, c.platform
+			got := runStatus(t, r)
+			if got.Code != 0 || got.Stderr != "" || !strings.Contains(got.Stdout, c.want+"\n") {
+				t.Fatal(got)
+			}
+		})
+	}
+	r := statusRig(t, "linux", "keychain")
+	delete(r.vars, config.EnvAPIURL)
+	if got := runStatus(t, r); !strings.Contains(got.Stdout, "  Backend: https://stored.example\n") {
+		t.Fatal(got)
+	}
+	f := r.file(t)
+	f.APIURL = ""
+	r.save(t, f)
+	if got := runStatus(t, r); !strings.Contains(got.Stdout, "  Backend: http://localhost\n") {
+		t.Fatal(got)
+	}
+	r.deps.Build.APIURL = ""
+	if got := runStatus(t, r); !strings.Contains(got.Stdout, "  Backend: not set\n") {
+		t.Fatal(got)
+	}
+	f.Token.UserName, f.Token.Hostname, f.Default.ChatID = "\x1b[31mMorpheus", "host\x1b[0m", "c\x00"
+	f.Default.ChatTitle = "\x1b]0;bad\x07Title"
+	r.save(t, f)
+	if got := runStatus(t, r); strings.ContainsAny(got.Stdout, "\x1b\x00\x07") {
+		t.Fatal(got)
+	}
+}
+
+func TestStatusEnvironmentToken(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		exp  any
+		code int
+		want string
+	}{
+		{"future", connectExpiry.Unix(), 0, "expires 2027-02-14 10:21 (in 3 months)"},
+		{"past", time.Date(2026, 11, 12, 9, 21, 0, 0, time.UTC).Unix(), 3, "expired on 2026-11-12 10:21 (2 days ago)"},
+		{"absent", nil, 0, "  Token: THE_AGENT_CLI_TOKEN environment variable\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := statusRig(t, "linux", "passphrase")
+			if err := os.Remove(filepath.Join(r.home, credentials.FileName)); err != nil {
+				t.Fatal(err)
+			}
+			payload := map[string]any{"sub": "u1"}
+			if c.exp != nil {
+				payload["exp"] = c.exp
+			}
+			raw := testkit.RawToken(map[string]any{"alg": "HS256"}, payload)
+			r.vars[config.EnvToken] = raw
+			got := runStatus(t, r)
+			if got.Code != c.code || got.Stderr != "" || !strings.HasPrefix(got.Stdout, "Connected using THE_AGENT_CLI_TOKEN\n") || !strings.Contains(got.Stdout, c.want) || strings.Contains(got.Stdout, "To unlock") {
+				t.Fatal(got)
+			}
+			testkit.AssertNoSecret(t, raw, got.Stdout, got.Stderr)
+		})
+	}
+	r := newConnectRig(t, "linux")
+	r.vars[config.EnvToken] = "garbage"
+	got := runStatus(t, r)
+	if got.Code != 3 || got.Stdout != "" || got.Stderr != "error: THE_AGENT_CLI_TOKEN is not a valid CLI token\n" {
+		t.Fatal(got)
 	}
 }

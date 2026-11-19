@@ -23,12 +23,12 @@ func (c *FakeClock) Now() time.Time { return c.Time }
 type Option func(*cli.Deps)
 
 // NewDeps builds Deps for a linux/amd64 run of a default build: empty environment, the user home
-// /home/milos (which does not exist), empty stdin, a non-interactive FakeTerm, a fixed clock and UTC.
+// /home/morpheus (which does not exist), empty stdin, a non-interactive FakeTerm, a fixed clock and UTC.
 // Run replaces Stdout and Stderr.
 func NewDeps(opts ...Option) cli.Deps {
 	deps := cli.Deps{
 		Getenv:           func(string) string { return "" },
-		UserHomeDir:      func() (string, error) { return "/home/milos", nil },
+		UserHomeDir:      func() (string, error) { return "/home/morpheus", nil },
 		Stdin:            strings.NewReader(""),
 		Term:             &FakeTerm{},
 		Text:             text.MustNew("linux"),
@@ -37,7 +37,7 @@ func NewDeps(opts ...Option) cli.Deps {
 		GOOS:             "linux",
 		GOARCH:           "amd64",
 		Build:            buildinfo.Resolve(buildinfo.Info{}),
-		Machine:          func() config.Machine { return config.Machine{ID: "test-machine", Hostname: "milos-mbp"} },
+		Machine:          func() config.Machine { return config.Machine{ID: "test-machine", Hostname: "morpheus-mbp"} },
 		Keychain:         &FakeKeychain{},
 		ScryptWorkFactor: 8,
 	}
@@ -61,13 +61,13 @@ func WithTerm(t *FakeTerm) Option {
 }
 
 // WithPlatform sets GOOS and GOARCH, loads the catalog for that GOOS and gives the user a home
-// directory in that OS's style (C:\Users\milos on windows); set UserHomeDir afterwards to change it.
+// directory in that OS's style (C:\Users\morpheus on windows); set UserHomeDir afterwards to change it.
 func WithPlatform(goos, goarch string) Option {
 	return func(d *cli.Deps) {
 		d.GOOS, d.GOARCH = goos, goarch
 		d.Text = text.MustNew(goos)
 		if goos == "windows" {
-			d.UserHomeDir = func() (string, error) { return `C:\Users\milos`, nil }
+			d.UserHomeDir = func() (string, error) { return `C:\Users\morpheus`, nil }
 		}
 	}
 }

@@ -81,8 +81,8 @@ func (r *rig) connect(requested string) credentials.Mode {
 	_, err = plan.Persist(token, previous, func() error {
 		f := r.readConfig()
 		f.DeviceID = deviceID
-		f.Token = config.Token{Store: string(plan.Mode()), UserID: "9f1c", UserName: "Milos", ExpiresAt: time.Date(2027, 2, 14, 9, 21, 0, 0, time.UTC)}
-		f.Default = config.Default{ChatID: "3f2a", ChatPlatform: "telegram", ChatTitle: "Milos", ChatPrivate: true}
+		f.Token = config.Token{Store: string(plan.Mode()), UserID: "9f1c", UserName: "Morpheus", ExpiresAt: time.Date(2027, 2, 14, 9, 21, 0, 0, time.UTC)}
+		f.Default = config.Default{ChatID: "3f2a", ChatPlatform: "telegram", ChatTitle: "Morpheus", ChatPrivate: true}
 		return config.Save(r.configPath(), f)
 	})
 	if err != nil {

@@ -21,22 +21,22 @@ func userHome(path string) func() (string, error) {
 
 func TestResolveHomeDefaultsToDotNameInUserHome(t *testing.T) {
 	for _, name := range []string{"agent-cli", "abot", "abot-dev"} {
-		got, err := config.ResolveHome(envOf(nil), userHome("/home/milos"), name)
+		got, err := config.ResolveHome(envOf(nil), userHome("/home/morpheus"), name)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := filepath.Join("/home/milos", "."+name); got != want {
+		if want := filepath.Join("/home/morpheus", "."+name); got != want {
 			t.Errorf("%s: got %q, want %q", name, got, want)
 		}
 	}
 }
 
 func TestResolveHomeWithWindowsStyleUserHome(t *testing.T) {
-	got, err := config.ResolveHome(envOf(nil), userHome(`C:\Users\milos`), "abot")
+	got, err := config.ResolveHome(envOf(nil), userHome(`C:\Users\morpheus`), "abot")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(got, `C:\Users\milos`) || !strings.HasSuffix(got, ".abot") {
+	if !strings.HasPrefix(got, `C:\Users\morpheus`) || !strings.HasSuffix(got, ".abot") {
 		t.Errorf("got %q", got)
 	}
 }
@@ -59,7 +59,7 @@ func TestResolveHomeRelativeOverrideIsMadeAbsolute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := config.ResolveHome(envOf(map[string]string{config.EnvHome: "state"}), userHome("/home/milos"), "agent-cli")
+	got, err := config.ResolveHome(envOf(map[string]string{config.EnvHome: "state"}), userHome("/home/morpheus"), "agent-cli")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,8 +69,8 @@ func TestResolveHomeRelativeOverrideIsMadeAbsolute(t *testing.T) {
 }
 
 func TestResolveHomeEmptyOverrideCountsAsUnset(t *testing.T) {
-	got, err := config.ResolveHome(envOf(map[string]string{config.EnvHome: ""}), userHome("/home/milos"), "abot")
-	if err != nil || got != filepath.Join("/home/milos", ".abot") {
+	got, err := config.ResolveHome(envOf(map[string]string{config.EnvHome: ""}), userHome("/home/morpheus"), "abot")
+	if err != nil || got != filepath.Join("/home/morpheus", ".abot") {
 		t.Errorf("got %q, %v", got, err)
 	}
 }

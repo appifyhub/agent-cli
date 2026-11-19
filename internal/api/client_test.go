@@ -36,7 +36,7 @@ func TestAuthenticatedRequestHeaders(t *testing.T) {
 
 func TestConnectSendsNoAuthorization(t *testing.T) {
 	b := testkit.NewBackend(t)
-	b.Handle("POST", "/cli/connect", testkit.ConnectOK(secretToken, expiry, "u1", "Milos", 1.5))
+	b.Handle("POST", "/cli/connect", testkit.ConnectOK(secretToken, expiry, "u1", "Morpheus", 1.5))
 	if _, err := newClient(b).Connect(t.Context(), api.ConnectRequest{ConnectKey: "K7Q2", DeviceID: "d", Hostname: "h", OS: "linux"}); err != nil {
 		t.Fatal(err)
 	}

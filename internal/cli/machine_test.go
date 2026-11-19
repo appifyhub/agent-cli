@@ -9,8 +9,8 @@ import (
 func TestMachineHostname(t *testing.T) {
 	const id = "13892199-ba28-8c7e-a6ab-399e6bfddc6f"
 	for _, c := range []struct{ input, want string }{
-		{"Milos's MacBook Pro", "Milos-s-MacBook-Pro"},
-		{"mïlos 💻 mac", "m-los-mac"},
+		{"Morpheus's MacBook Pro", "Morpheus-s-MacBook-Pro"},
+		{"néo 💻 mac", "n-o-mac"},
 		{strings.Repeat("a", 32), strings.Repeat("a", 32)},
 		{strings.Repeat("a", 40), strings.Repeat("a", 32)},
 		{strings.Repeat("a", 31) + ".extra", strings.Repeat("a", 31)},

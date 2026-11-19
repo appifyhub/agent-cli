@@ -17,14 +17,14 @@ func fullFile() File {
 		Token: Token{
 			Store:     "keychain",
 			UserID:    "9f1c2d3e4a5b6c7d8e9f0a1b2c3d4e5f",
-			UserName:  "Milos",
-			Hostname:  "milos-mbp",
+			UserName:  "Morpheus",
+			Hostname:  "morpheus-mbp",
 			ExpiresAt: time.Date(2027, 2, 14, 9, 21, 0, 0, time.UTC),
 		},
 		Default: Default{
 			ChatID:       "3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7",
 			ChatPlatform: "telegram",
-			ChatTitle:    "Milos",
+			ChatTitle:    "Morpheus",
 			ChatPrivate:  true,
 		},
 	}

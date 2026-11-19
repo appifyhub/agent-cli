@@ -17,12 +17,12 @@ func rawPayload(json string) string {
 
 func TestParseValidToken(t *testing.T) {
 	exp := time.Date(2027, 2, 14, 9, 21, 0, 0, time.UTC)
-	raw := testkit.NewToken(testkit.TokenClaims{Sub: "9f1c2d3e", Exp: exp, DeviceID: "dev-1", Hostname: "milos-mbp"})
+	raw := testkit.NewToken(testkit.TokenClaims{Sub: "9f1c2d3e", Exp: exp, DeviceID: "dev-1", Hostname: "morpheus-mbp"})
 	got, err := token.Parse(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := token.Claims{Subject: "9f1c2d3e", ExpiresAt: exp, DeviceID: "dev-1", Hostname: "milos-mbp"}
+	want := token.Claims{Subject: "9f1c2d3e", ExpiresAt: exp, DeviceID: "dev-1", Hostname: "morpheus-mbp"}
 	if got != want {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
@@ -32,6 +32,10 @@ func TestParseOptionalClaimsMayBeAbsent(t *testing.T) {
 	got, err := token.Parse(testkit.NewToken(testkit.TokenClaims{Sub: "u", Exp: time.Unix(1800000000, 0)}))
 	if err != nil || got.DeviceID != "" || got.Hostname != "" {
 		t.Errorf("got %+v, %v", got, err)
+	}
+	got, err = token.Parse(rawPayload(`{"sub":"u"}`))
+	if err != nil || got.Subject != "u" || !got.ExpiresAt.IsZero() {
+		t.Errorf("absent expiry: %+v, %v", got, err)
 	}
 }
 
@@ -65,7 +69,6 @@ func TestParseRejectsMalformedTokens(t *testing.T) {
 		"missing sub":       rawPayload(`{"exp":1800000000}`),
 		"empty sub":         rawPayload(`{"sub":"","exp":1800000000}`),
 		"numeric sub":       rawPayload(`{"sub":5,"exp":1800000000}`),
-		"missing exp":       rawPayload(`{"sub":"u"}`),
 		"string exp":        rawPayload(`{"sub":"u","exp":"1800000000"}`),
 		"zero exp":          rawPayload(`{"sub":"u","exp":0}`),
 		"negative exp":      rawPayload(`{"sub":"u","exp":-5}`),
