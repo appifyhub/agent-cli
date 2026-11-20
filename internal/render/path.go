@@ -2,7 +2,6 @@
 package render
 
 import (
-	"path/filepath"
 	"strings"
 )
 
@@ -32,5 +31,5 @@ func slashes(path string, windows bool) string {
 	if windows {
 		return strings.ReplaceAll(path, `\`, "/")
 	}
-	return filepath.ToSlash(path)
+	return path
 }
