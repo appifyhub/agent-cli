@@ -345,6 +345,9 @@ func TestReleaseGA(t *testing.T) {
 		"THE_AGENT_CLI_PRODUCT_URL=https://agent.appifyhub.com\n",
 		"THE_AGENT_CLI_VERSION=0.2.0\n",
 	)
+	if strings.Contains(r.log(t), "--skip=nfpm") {
+		t.Error("production release disabled Linux packages")
+	}
 	if !slices.Contains(r.originTags(t), "v0.2.0") {
 		t.Errorf("tag v0.2.0 was not pushed: %q", r.originTags(t))
 	}
@@ -361,6 +364,7 @@ func TestReleaseBeta(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 	assertContainsAll(t, "goreleaser call", r.log(t),
+		"call goreleaser release --clean --skip=nfpm",
 		"GORELEASER_CURRENT_TAG=v0.2.0-beta\n",
 		"GORELEASER_PREVIOUS_TAG=v0.1.0-beta\n",
 		"THE_AGENT_CLI_BRANDED_NAME=abot-dev\n",
@@ -412,13 +416,25 @@ func TestReleaseCheckChangesNothing(t *testing.T) {
 }
 
 func TestReleaseSnapshotPublishesNothing(t *testing.T) {
-	r := newReleaseRepo(t, "0.2.0\n", "first")
-	if code, out := r.run(t, nil, "beta", "--snapshot"); code != 0 {
-		t.Fatalf("exit %d\n%s", code, out)
-	}
-	assertContainsAll(t, "goreleaser call", r.log(t), "call goreleaser release --snapshot --clean", "THE_AGENT_CLI_BRANDED_NAME=abot-dev\n")
-	if len(r.originTags(t)) != 0 || len(r.localTags(t)) != 0 {
-		t.Errorf("a snapshot must not tag")
+	for _, c := range []struct {
+		quality, branded, skip string
+	}{
+		{"ga", "abot", ""},
+		{"beta", "abot-dev", " --skip=nfpm"},
+	} {
+		t.Run(c.quality, func(t *testing.T) {
+			r := newReleaseRepo(t, "0.2.0\n", "first")
+			if code, out := r.run(t, nil, c.quality, "--snapshot"); code != 0 {
+				t.Fatalf("exit %d\n%s", code, out)
+			}
+			assertContainsAll(t, "goreleaser call", r.log(t),
+				"call goreleaser release --snapshot --clean"+c.skip+"\n",
+				"THE_AGENT_CLI_BRANDED_NAME="+c.branded+"\n",
+			)
+			if len(r.originTags(t)) != 0 || len(r.localTags(t)) != 0 {
+				t.Errorf("a snapshot must not tag")
+			}
+		})
 	}
 }
 

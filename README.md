@@ -35,7 +35,7 @@ Every release on the [Releases page](https://github.com/appifyhub/agent-cli/rele
 | `agent-cli_<version>_<os>_<arch>` | The generic CLI, for any backend instance |
 | `abot_<version>_<os>_<arch>` | The same CLI, preconfigured for the hosted service |
 
-Pre-releases carry the same pair as `agent-cli-dev` and `abot-dev`, where `abot-dev` points at the hosted service's staging environment.
+Pre-releases carry the same pair as `agent-cli-dev` and `abot-dev`, where `abot-dev` points at the hosted service's staging environment. Production releases also include `.deb` and `.rpm` packages of `abot` for Linux on amd64 and arm64.
 
 Unpack the archive and put the binary on your `PATH`. On macOS, a manually downloaded binary can be quarantined by Gatekeeper; clear the flag with `xattr -d com.apple.quarantine ./agent-cli`. MacOS 13 or later is required. On Windows, SmartScreen may warn on first launch.
 
@@ -138,7 +138,7 @@ export PATH="$HOME/go/bin:$PATH"    # where go install puts tools
 make build                 # bin/agent-cli for this machine
 make build-all             # all four builds for this machine, into bin/
 ./tools/build abot-dev     # one build, into bin/
-make snapshot              # release archives for every platform, into dist/
+make snapshot              # cross-platform archives and Linux packages, into dist/
 ```
 
 `THE_AGENT_CLI_BUILD_API_URL` and `THE_AGENT_CLI_BUILD_PRODUCT_URL` override the built-in URLs of a local build:
