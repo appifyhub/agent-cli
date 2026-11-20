@@ -6,17 +6,33 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/appifyhub/agent-cli/internal/term"
 )
 
 // commandOrder is the order of the Commands section of the root help; commands that are not
 // registered yet are simply absent.
-var commandOrder = []string{"connect", "revoke-all", "status", "chats", "notify", "unlock", "env", "completion", "help"}
+var commandOrder = []string{"connect", "revoke-all", "status", "server", "chats", "notify", "unlock", "env", "skill", "completion", "help"}
+
+// help annotations: the environment and exit-code lines of a command's help
+const (
+	annotationEnvironment = "environment"
+	annotationExitCodes   = "exit_codes"
+)
+
+// withHelp attaches the examples and the environment and exit-code lines to a command's help.
+func withHelp(cmd *cobra.Command, examples, environment, exitCodes string) *cobra.Command {
+	cmd.Example = examples
+	cmd.Annotations = map[string]string{annotationEnvironment: environment, annotationExitCodes: exitCodes}
+	return cmd
+}
 
 // rootState is the per-invocation state shared by the commands.
 type rootState struct {
 	deps    Deps
 	verbose bool
 	version bool
+	helpErr error
 }
 
 func newRoot(deps Deps) (*cobra.Command, *rootState) {
@@ -30,8 +46,7 @@ func newRoot(deps Deps) (*cobra.Command, *rootState) {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if state.version {
-				state.printVersion()
-				return nil
+				return state.printVersion()
 			}
 			return cmd.Help()
 		},
@@ -48,6 +63,16 @@ func newRoot(deps Deps) (*cobra.Command, *rootState) {
 
 	root.SetHelpCommand(state.helpCommand())
 	root.SetHelpFunc(state.renderHelp)
+
+	root.AddCommand(state.connectCommand())
+	root.AddCommand(state.revokeAllCommand())
+	root.AddCommand(state.statusCommand())
+	root.AddCommand(state.chatsCommand())
+	root.AddCommand(state.notifyCommand())
+	root.AddCommand(state.unlockCommand())
+	root.AddCommand(state.envCommand())
+	root.AddCommand(state.skillCommand())
+	root.AddCommand(state.serverCommand())
 	root.AddCommand(state.completionCommand())
 
 	state.guardArgs(root)
@@ -84,12 +109,16 @@ func (s *rootState) guardArgs(cmd *cobra.Command) {
 	}
 }
 
-func (s *rootState) printVersion() {
+func (s *rootState) printVersion() error {
 	build := s.deps.Build
-	_, _ = fmt.Fprintln(s.deps.Stdout, build.VersionLine(s.deps.GOOS, s.deps.GOARCH))
-	if s.verbose {
-		_, _ = fmt.Fprintln(s.deps.Stdout, build.CommitLine())
+	if _, err := fmt.Fprintln(s.deps.Stdout, build.VersionLine(s.deps.GOOS, s.deps.GOARCH)); err != nil {
+		return err
 	}
+	if s.verbose {
+		_, err := fmt.Fprintln(s.deps.Stdout, build.CommitLine())
+		return err
+	}
+	return nil
 }
 
 func (s *rootState) renderHelp(cmd *cobra.Command, _ []string) {
@@ -97,7 +126,9 @@ func (s *rootState) renderHelp(cmd *cobra.Command, _ []string) {
 	if !cmd.HasParent() {
 		out = s.rootHelp(cmd)
 	}
-	_, _ = fmt.Fprint(s.deps.Stdout, out)
+	if _, err := fmt.Fprint(s.deps.Stdout, out); err != nil && s.helpErr == nil {
+		s.helpErr = err
+	}
 }
 
 func (s *rootState) rootHelp(root *cobra.Command) string {
@@ -117,8 +148,8 @@ func (s *rootState) rootHelp(root *cobra.Command) string {
 
 	var b strings.Builder
 	fmt.Fprintln(&b, cat.T("root.description", "name", build.Name, "product_url", build.ProductURL))
-	fmt.Fprintf(&b, "%s\n\n", cat.T("root.usage", "name", build.Name))
-	fmt.Fprintln(&b, cat.T("root.commands_label"))
+	fmt.Fprintf(&b, "%s\n\n", s.deps.styled(term.Out, term.Heading, cat.T("root.usage", "name", build.Name)))
+	fmt.Fprintln(&b, s.deps.styled(term.Out, term.Heading, cat.T("root.commands_label")))
 	for _, c := range commands {
 		fmt.Fprintf(&b, "  %-*s  %s\n", width, c.Name(), c.Short)
 	}
@@ -136,10 +167,14 @@ func (s *rootState) commandHelp(cmd *cobra.Command) string {
 		description = cmd.Short
 	}
 	fmt.Fprintf(&b, "%s\n\n", description)
-	fmt.Fprintf(&b, "%s %s\n", cat.T("help.usage_label"), usageLine(cmd))
+	fmt.Fprintf(&b, "%s %s\n", s.deps.styled(term.Out, term.Heading, cat.T("help.usage_label")), usageLine(cmd))
 	if lines := flagLines(cmd.LocalFlags(), cmd.InheritedFlags()); len(lines) > 0 {
-		fmt.Fprintf(&b, "\n%s\n%s\n", cat.T("help.flags_label"), strings.Join(lines, "\n"))
+		fmt.Fprintf(&b, "\n%s\n%s\n", s.deps.styled(term.Out, term.Heading, cat.T("help.flags_label")), strings.Join(lines, "\n"))
 	}
+	if cmd.Example != "" {
+		fmt.Fprintf(&b, "\n%s\n%s\n", s.deps.styled(term.Out, term.Heading, cat.T("help.examples_label")), cmd.Example)
+	}
+	fmt.Fprintf(&b, "\n%s\n%s\n", cmd.Annotations[annotationEnvironment], cmd.Annotations[annotationExitCodes])
 	return b.String()
 }
 
@@ -184,9 +219,11 @@ func flagLines(sets ...*pflag.FlagSet) []string {
 }
 
 func (s *rootState) helpCommand() *cobra.Command {
-	return &cobra.Command{
+	cat := s.deps.Text
+	return withHelp(&cobra.Command{
 		Use:   "help [command]",
-		Short: s.deps.Text.T("command.help.short"),
+		Short: cat.T("command.help.short"),
+		Long:  cat.T("command.help.long"),
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := cmd.Root()
@@ -196,5 +233,5 @@ func (s *rootState) helpCommand() *cobra.Command {
 			}
 			return target.Help()
 		},
-	}
+	}, cat.T("command.help.examples", "name", s.deps.Build.Name), cat.T("command.help.environment"), cat.T("command.help.exit_codes"))
 }

@@ -51,6 +51,28 @@ archives:
     ids: [ generic ]
     name_template: "{{ .Env.THE_AGENT_CLI_GENERIC_NAME }}_{{ .Env.THE_AGENT_CLI_VERSION }}_{{ .Os }}_{{ .Arch }}"
 
+nfpms:
+  - id: branded
+    ids: [ branded ]
+    package_name: abot
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: AppifyHub
+    homepage: "{{ .Env.THE_AGENT_CLI_PRODUCT_URL }}"
+    maintainer: AppifyHub
+    description: The Agent's command-line interface
+    license: MIT
+    formats: [ deb, rpm ]
+    bindir: /usr/bin
+    contents:
+      - src: abot
+        dst: /usr/bin/@abot
+        type: symlink
+      - src: LICENSE
+        dst: /usr/share/licenses/abot/LICENSE
+      - src: README.md
+        dst: /usr/share/doc/abot/README.md
+    mtime: "{{ .CommitDate }}"
+
 checksum:
   name_template: checksums.txt
   algorithm: sha256

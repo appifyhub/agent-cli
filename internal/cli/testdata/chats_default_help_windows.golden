@@ -1,0 +1,25 @@
+Without flags, show the effective default chat, platform, or latest-chat fallback and a tip. This works offline without reading credentials, prompting, contacting the backend or writing files.
+To change the stored default, choose one of --set <chat-id>, --platform telegram|whatsapp, or --clear.
+--set matches the id exactly, ignoring case, against your authenticated chat list and caches the server's id, platform, title and privacy in config.toml. An unknown id leaves the default unchanged. Run agent-cli chats to find an id.
+--platform accepts either platform in any case and replaces a chat default. --clear removes the stored default, even if none is set. Both work offline without reading credentials or prompting.
+Only the default target is changed; device identity, backend address and connection metadata are preserved. State lives under THE_AGENT_CLI_HOME, otherwise ~/.<command name>.
+THE_AGENT_CLI_DEFAULT_CHAT wins over THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Environment defaults are labelled with their variable name. Changes update the stored default, not environment variables.
+
+Usage: agent-cli chats default
+
+Flags:
+      --clear              Remove the stored default target
+      --platform <string>  Use the latest private chat on telegram or whatsapp
+      --set <string>       Set the stored default to one of your chat IDs
+  -h, --help               Print help
+  -v, --verbose            Print diagnostic details to stderr
+
+Examples:
+  agent-cli chats default
+  agent-cli chats default --set "3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7"
+  agent-cli chats default --platform telegram
+  agent-cli chats default --platform WhatsApp
+  agent-cli chats default --clear
+
+Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM
+Exit codes: 0 ok · 1 request or local state failure · 2 usage, unknown chat or invalid platform · 3 not connected, locked or revoked · 4 chat unreachable · 5 insufficient credits · 6 rate limited

@@ -1,0 +1,23 @@
+Send one quoted message, or read stdin when no argument is given. An argument takes precedence over a pipe. A terminal without a message fails immediately.
+Leading BOM and surrounding whitespace are removed; interior newlines are preserved. Messages must contain 1–4096 characters. Stdin reads at most 16 KiB and is truncated to 4096 characters; longer arguments are rejected.
+Choose --chat or --platform, never both. Flags override THE_AGENT_CLI_DEFAULT_CHAT, then THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Without a target the backend selects your latest private chat.
+Success is silent unless --verbose is set.
+Notifications are never retried automatically.
+PowerShell 7 pipes UTF-8 by default. In Windows PowerShell 5.1, set $OutputEncoding = [System.Text.UTF8Encoding]::new() before piping non-ASCII text.
+
+Usage: agent-cli notify [<message>]
+
+Flags:
+      --chat <string>      Send to this chat ID
+      --platform <string>  Send to your latest private chat on telegram or whatsapp
+  -h, --help               Print help
+  -v, --verbose            Print diagnostic details to stderr
+
+Examples:
+  agent-cli notify "Build finished"
+  agent-cli notify --chat "<chat-id>" "Dinner's ready"
+  agent-cli notify --platform whatsapp "Deploy done" -v
+  echo "Backup finished" | agent-cli notify
+
+Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM
+Exit codes: 0 sent · 1 delivery or local failure · 2 usage or validation error · 3 not connected, locked or revoked · 4 chat unreachable · 5 insufficient credits · 6 rate limited

@@ -1,0 +1,16 @@
+Print every environment variable the CLI reads, what it controls, whether it is set and the value in effect.
+A variable that is not set shows the default in effect, which can come from the config file or the build.
+Secrets are reported as set, never shown. Works offline and changes nothing.
+
+Usage: agent-cli env
+
+Flags:
+  -h, --help     Print help
+  -v, --verbose  Print diagnostic details to stderr
+
+Examples:
+  agent-cli env
+  THE_AGENT_CLI_API_URL="https://agent.example.com" agent-cli env
+
+Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM, NO_COLOR
+Exit codes: 0 ok · 1 failure (home directory or config file unusable) · 2 usage error

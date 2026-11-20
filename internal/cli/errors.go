@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,10 @@ import (
 type Failure struct {
 	Code    int
 	Message string
+	// Bare prints the message as it is, without the "error: " prefix: the not-connected guidance.
+	Bare bool
+	// Silent prints nothing: the command already showed its result and only sets the exit code.
+	Silent bool
 }
 
 func (f *Failure) Error() string { return f.Message }
@@ -27,19 +32,29 @@ func usageError(message string) *Failure {
 // Present is the one place that turns an error into stderr output and an exit code.
 // An aborted prompt prints the abort notice; any other error prints a single "error: " line,
 // and errors that carry no exit code of their own are failures (exit 1).
-func Present(w io.Writer, cat *text.Catalog, err error) int {
+func Present(w io.Writer, cat *text.Catalog, err error, color bool) int {
 	if err == nil {
 		return ExitOK
 	}
 	if errors.Is(err, term.ErrAborted) {
-		_, _ = fmt.Fprintln(w, cat.T("error.aborted"))
+		_, _ = fmt.Fprintln(w, term.Paint(cat.T("error.aborted"), term.Warning, color))
 		return ExitFailure
 	}
-	failure := &Failure{Code: ExitFailure, Message: err.Error()}
-	var known *Failure
-	if errors.As(err, &known) {
-		failure = known
+	var failure *Failure
+	if !errors.As(err, &failure) {
+		if errors.Is(err, context.Canceled) {
+			failure = &Failure{Code: ExitFailure, Message: cat.T("error.cancelled")}
+		} else {
+			failure = &Failure{Code: ExitFailure, Message: cat.T("error.failed")}
+		}
 	}
-	_, _ = fmt.Fprintln(w, cat.T("error.line", "message", term.Clean(failure.Message, 0)))
+	if failure.Silent {
+		return failure.Code
+	}
+	message := term.Clean(failure.Message, 0)
+	if !failure.Bare {
+		message = cat.T("error.line", "message", message)
+	}
+	_, _ = fmt.Fprintln(w, term.Paint(message, term.Error, color))
 	return failure.Code
 }

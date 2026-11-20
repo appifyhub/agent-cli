@@ -1,0 +1,20 @@
+THE_AGENT_CLI_API_URL: not set, using http://localhost
+  Address of the backend; wins over the address stored by connect and the built-in one.
+
+THE_AGENT_CLI_HOME: not set, using ~\.agent-cli
+  Directory for the config file and other local state.
+
+THE_AGENT_CLI_TOKEN: not set
+  Access token to use instead of the stored one; never shown.
+
+THE_AGENT_CLI_PASSPHRASE: not set
+  Passphrase that unlocks a passphrase-protected token without asking; never shown.
+
+THE_AGENT_CLI_DEFAULT_CHAT: not set
+  Chat that notifications go to when none is named.
+
+THE_AGENT_CLI_DEFAULT_PLATFORM: not set
+  Platform (telegram or whatsapp) whose latest chat receives notifications when no chat is named.
+
+NO_COLOR: not set, colors follow the terminal
+  Turns colors off when set to any value.

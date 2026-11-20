@@ -1,0 +1,14 @@
+Print the help of a command: what it does, its usage, flags and examples, and the environment variables and exit codes that affect it.
+
+Usage: agent-cli help [command]
+
+Flags:
+  -h, --help     Print help
+  -v, --verbose  Print diagnostic details to stderr
+
+Examples:
+  agent-cli help env
+  agent-cli env --help
+
+Environment: none
+Exit codes: 0 ok · 2 unknown help topic

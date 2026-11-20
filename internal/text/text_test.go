@@ -61,11 +61,11 @@ func placeholders(template string) []string {
 
 func loadEntries(t *testing.T) map[string]string {
 	t.Helper()
-	entries, err := decode(catalogFile)
+	catalog, err := New("linux")
 	if err != nil {
 		t.Fatalf("catalog must decode strictly: %v", err)
 	}
-	return entries
+	return catalog.entries
 }
 
 func TestCatalogLeavesAreNonEmpty(t *testing.T) {
@@ -128,7 +128,7 @@ func TestRender(t *testing.T) {
 		args     []string
 		want     string
 	}{
-		{"hello {name}", []string{"name", "Milos"}, "hello Milos"},
+		{"hello {name}", []string{"name", "Morpheus"}, "hello Morpheus"},
 		{"{a}{b}{a}", []string{"a", "1", "b", "2"}, "121"},
 		{"literal {{braces}} here", nil, "literal {braces} here"},
 		{"{{{name}}}", []string{"name", "x"}, "{x}"},
