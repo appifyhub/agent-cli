@@ -112,16 +112,19 @@ func (c *Client) call(ctx context.Context, method, path, token string, payload a
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err = io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-	if err != nil {
-		return resp.StatusCode, nil, &Error{Kind: KindUnreachable, Status: resp.StatusCode, Cause: err}
-	}
-	if len(body) > maxBody {
-		return resp.StatusCode, nil, unexpected(resp.StatusCode)
+	if err != nil || len(body) > maxBody {
+		body = nil
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if err != nil {
+			return resp.StatusCode, nil, &Error{Kind: KindUnreachable, Status: resp.StatusCode, Cause: err}
+		}
+		if body == nil {
+			return resp.StatusCode, nil, unexpected(resp.StatusCode)
+		}
 		return resp.StatusCode, body, nil
 	}
-	apiErr := errorFromResponse(token != "", resp.StatusCode, body)
+	apiErr := errorFromResponse(token, resp.StatusCode, body)
 	if c.onError != nil {
 		c.onError(apiErr.Status, apiErr.Code)
 	}

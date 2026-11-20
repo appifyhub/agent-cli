@@ -81,12 +81,25 @@ func TestPanicPrintsTraceUnderVerbose(t *testing.T) {
 }
 
 func TestCommandErrorsAreFailuresNotUsageErrors(t *testing.T) {
-	failing := &cobra.Command{Use: "fail", RunE: func(*cobra.Command, []string) error {
-		return fmt.Errorf("writing: %w", errors.New("broken pipe"))
-	}}
-	code, _, stderr := runWith(failing, "fail")
-	if code != ExitFailure || stderr != "error: writing: broken pipe\n" {
-		t.Fatalf("code %d, stderr %q", code, stderr)
+	for _, c := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"write", fmt.Errorf("writing: %w", errors.New("broken pipe")), "error: operation failed\n"},
+		{"cancel", fmt.Errorf("request: %w", context.Canceled), "error: operation cancelled\n"},
+	} {
+		for _, verbose := range []bool{false, true} {
+			failing := &cobra.Command{Use: "fail", RunE: func(*cobra.Command, []string) error { return c.err }}
+			args := []string{"fail"}
+			if verbose {
+				args = append(args, "-v")
+			}
+			code, stdout, stderr := runWith(failing, args...)
+			if code != ExitFailure || stdout != "" || stderr != c.want {
+				t.Fatalf("%s verbose=%v: code %d, stdout %q, stderr %q", c.name, verbose, code, stdout, stderr)
+			}
+		}
 	}
 }
 
@@ -119,7 +132,11 @@ func TestPresent(t *testing.T) {
 		{"failure keeps its code", &Failure{Code: ExitRateLimited, Message: "slow down"}, ExitRateLimited, "error: slow down\n"},
 		{"wrapped failure", fmt.Errorf("x: %w", &Failure{Code: ExitChatUnreachable, Message: "gone"}), ExitChatUnreachable, "error: gone\n"},
 		{"usage error keeps the first line", usageError("bad input\n\nDid you mean this?\n\tstatus"), ExitUsage, "error: bad input\n"},
-		{"plain error is a failure", errors.New("disk full"), ExitFailure, "error: disk full\n"},
+		{"plain error is a failure", errors.New("disk full"), ExitFailure, "error: operation failed\n"},
+		{"cancelled", context.Canceled, ExitFailure, "error: operation cancelled\n"},
+		{"wrapped cancellation", fmt.Errorf("request sentinel: %w", context.Canceled), ExitFailure, "error: operation cancelled\n"},
+		{"bare failure", &Failure{Code: ExitNotConnected, Message: "connect first", Bare: true}, ExitNotConnected, "connect first\n"},
+		{"silent failure", &Failure{Code: ExitFailure, Silent: true}, ExitFailure, ""},
 		{"escape sequences are stripped", &Failure{Code: ExitFailure, Message: "a\x1b[31mb\nc"}, ExitFailure, "error: ab c\n"},
 	}
 	for _, c := range cases {
@@ -195,5 +212,70 @@ func TestSkillGuideCoversCommandTreeAndExitCodes(t *testing.T) {
 	windows := state.deps.Text.T("skill.guide", "name", d.Build.Name, "unlock", state.deps.Text.T("skill.unlock", "name", d.Build.Name))
 	if strings.ReplaceAll(windows, state.deps.Text.T("skill.unlock", "name", d.Build.Name), d.Text.T("skill.unlock", "name", d.Build.Name)) != guide {
 		t.Fatal("guide differs beyond shell instruction")
+	}
+}
+
+type failingOutput struct {
+	writes, failAt int
+	output         bytes.Buffer
+}
+
+func (w *failingOutput) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes == w.failAt {
+		return 0, errors.New("output sentinel must not be displayed")
+	}
+	return w.output.Write(p)
+}
+
+func TestHelpAndVersionWriteFailures(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		args []string
+		fail int
+	}{
+		{"root", nil, 1},
+		{"long help", []string{"--help"}, 1},
+		{"short help", []string{"-h"}, 1},
+		{"help command", []string{"help"}, 1},
+		{"subcommand long help", []string{"chats", "--help"}, 1},
+		{"subcommand short help", []string{"chats", "-h"}, 1},
+		{"nested help", []string{"help", "chats", "default"}, 1},
+		{"group help", []string{"skill"}, 1},
+		{"version", []string{"--version"}, 1},
+		{"verbose version first line", []string{"--version", "-v"}, 1},
+		{"verbose version second line", []string{"--version", "-v"}, 2},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			deps, _, stderr := testDeps()
+			writer := &failingOutput{failAt: c.fail}
+			deps.Stdout = writer
+			code := Run(t.Context(), deps, c.args)
+			if code != ExitFailure || stderr.String() != "error: operation failed\n" || writer.writes != c.fail {
+				t.Fatalf("code %d, stderr %q, writes %d", code, stderr.String(), writer.writes)
+			}
+			want := ""
+			if c.fail == 2 {
+				want = deps.Build.VersionLine(deps.GOOS, deps.GOARCH) + "\n"
+			}
+			if writer.output.String() != want {
+				t.Errorf("stdout %q, want %q", writer.output.String(), want)
+			}
+		})
+	}
+}
+
+func TestHelpWriteFailureDoesNotReplaceExecutionError(t *testing.T) {
+	deps, _, stderr := testDeps()
+	deps.Stdout = &failingOutput{failAt: 1}
+	root, state := newRoot(deps)
+	command := &cobra.Command{Use: "fail", RunE: func(cmd *cobra.Command, _ []string) error {
+		_ = cmd.Help()
+		return usageError("parser failure")
+	}}
+	root.AddCommand(command)
+	state.guardArgs(command)
+	if code := execute(t.Context(), root, state, []string{"fail"}); code != ExitUsage || stderr.String() != "error: parser failure\n" {
+		t.Fatalf("code %d, stderr %q", code, stderr.String())
 	}
 }

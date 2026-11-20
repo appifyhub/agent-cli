@@ -32,6 +32,7 @@ type rootState struct {
 	deps    Deps
 	verbose bool
 	version bool
+	helpErr error
 }
 
 func newRoot(deps Deps) (*cobra.Command, *rootState) {
@@ -45,8 +46,7 @@ func newRoot(deps Deps) (*cobra.Command, *rootState) {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if state.version {
-				state.printVersion()
-				return nil
+				return state.printVersion()
 			}
 			return cmd.Help()
 		},
@@ -109,12 +109,16 @@ func (s *rootState) guardArgs(cmd *cobra.Command) {
 	}
 }
 
-func (s *rootState) printVersion() {
+func (s *rootState) printVersion() error {
 	build := s.deps.Build
-	_, _ = fmt.Fprintln(s.deps.Stdout, build.VersionLine(s.deps.GOOS, s.deps.GOARCH))
-	if s.verbose {
-		_, _ = fmt.Fprintln(s.deps.Stdout, build.CommitLine())
+	if _, err := fmt.Fprintln(s.deps.Stdout, build.VersionLine(s.deps.GOOS, s.deps.GOARCH)); err != nil {
+		return err
 	}
+	if s.verbose {
+		_, err := fmt.Fprintln(s.deps.Stdout, build.CommitLine())
+		return err
+	}
+	return nil
 }
 
 func (s *rootState) renderHelp(cmd *cobra.Command, _ []string) {
@@ -122,7 +126,9 @@ func (s *rootState) renderHelp(cmd *cobra.Command, _ []string) {
 	if !cmd.HasParent() {
 		out = s.rootHelp(cmd)
 	}
-	_, _ = fmt.Fprint(s.deps.Stdout, out)
+	if _, err := fmt.Fprint(s.deps.Stdout, out); err != nil && s.helpErr == nil {
+		s.helpErr = err
+	}
 }
 
 func (s *rootState) rootHelp(root *cobra.Command) string {

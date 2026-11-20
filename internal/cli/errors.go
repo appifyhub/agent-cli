@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -39,10 +40,13 @@ func Present(w io.Writer, cat *text.Catalog, err error, color bool) int {
 		_, _ = fmt.Fprintln(w, term.Paint(cat.T("error.aborted"), term.Warning, color))
 		return ExitFailure
 	}
-	failure := &Failure{Code: ExitFailure, Message: err.Error()}
-	var known *Failure
-	if errors.As(err, &known) {
-		failure = known
+	var failure *Failure
+	if !errors.As(err, &failure) {
+		if errors.Is(err, context.Canceled) {
+			failure = &Failure{Code: ExitFailure, Message: cat.T("error.cancelled")}
+		} else {
+			failure = &Failure{Code: ExitFailure, Message: cat.T("error.failed")}
+		}
 	}
 	if failure.Silent {
 		return failure.Code

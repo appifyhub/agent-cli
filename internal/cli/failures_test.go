@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -177,6 +178,18 @@ func TestTranslateKeepsExistingFailuresAndUnknownErrors(t *testing.T) {
 	var failure *Failure
 	if got := translate(cat, "agent-cli", config.ErrNoAPIURL); !errors.As(got, &failure) || failure.Code != ExitUsage {
 		t.Errorf("config errors are translated too: %v", got)
+	}
+	for _, c := range []struct {
+		err  error
+		want string
+	}{
+		{fmt.Errorf("unknown sentinel: %w", other), "error: operation failed\n"},
+		{fmt.Errorf("cancel sentinel: %w", context.Canceled), "error: operation cancelled\n"},
+	} {
+		var out bytes.Buffer
+		if code := Present(&out, cat, translate(cat, "agent-cli", c.err), false); code != ExitFailure || out.String() != c.want {
+			t.Errorf("code %d, output %q", code, out.String())
+		}
 	}
 }
 

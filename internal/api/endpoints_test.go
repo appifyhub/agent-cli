@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -155,6 +156,17 @@ func TestRevokeAll(t *testing.T) {
 	if err := newClient(b).RevokeAll(t.Context(), secretToken, "u1"); err != nil {
 		t.Errorf("any 2xx is success: %v", err)
 	}
+	for _, oversized := range []bool{false, true} {
+		body := unusableBody(`{"status":"OK"}`, oversized)
+		requests := 0
+		client := api.New(api.Options{BaseURL: "http://backend.test", Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			requests++
+			return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
+		})})
+		if err := client.RevokeAll(t.Context(), secretToken, "u1"); err != nil || requests != 1 || body.closes != 1 {
+			t.Errorf("oversized=%v: err %v, requests/closes %d/%d", oversized, err, requests, body.closes)
+		}
+	}
 }
 
 func TestChats(t *testing.T) {
@@ -268,6 +280,30 @@ func TestNotifySuccessNeverFailsOnItsBody(t *testing.T) {
 		got, err := newClient(b).NotifyUser(t.Context(), secretToken, "u1", "hi", "")
 		if err != nil || got.Chat != nil || got.CreditBalance != nil {
 			t.Errorf("%s: got %+v, %v", name, got, err)
+		}
+	}
+	for _, oversized := range []bool{false, true} {
+		for _, chat := range []bool{false, true} {
+			body := unusableBody(`{"chat_id":"c1","platform":"telegram","is_private":true,"credit_balance":1}`, oversized)
+			requests, hooks := 0, 0
+			client := api.New(api.Options{
+				BaseURL: "http://backend.test",
+				Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					requests++
+					return &http.Response{StatusCode: http.StatusAccepted, Body: body}, nil
+				}),
+				OnError: func(int, int) { hooks++ },
+			})
+			var got api.Delivery
+			var err error
+			if chat {
+				got, err = client.NotifyChat(t.Context(), secretToken, "c1", "hi")
+			} else {
+				got, err = client.NotifyUser(t.Context(), secretToken, "u1", "hi", "")
+			}
+			if err != nil || got.Chat != nil || got.CreditBalance != nil || requests != 1 || hooks != 0 || body.closes != 1 {
+				t.Errorf("chat=%v oversized=%v: delivery %#v, err %v, requests/hooks/closes %d/%d/%d", chat, oversized, got, err, requests, hooks, body.closes)
+			}
 		}
 	}
 }

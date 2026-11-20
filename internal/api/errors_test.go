@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/appifyhub/agent-cli/internal/api"
@@ -97,6 +98,21 @@ func TestErrorTextNeverHoldsTheTokenOrTheBody(t *testing.T) {
 	b.Handle(http.MethodGet, "/cli/chats", testkit.Text(500, "echo "+secretToken))
 	_, err := newClient(b).Chats(t.Context(), secretToken)
 	testkit.AssertNoSecret(t, secretToken, err.Error())
+	for _, secret := range []string{secretToken, `header."payload".signature`} {
+		for _, prefix := range []string{"Invalid token ", strings.Repeat("x", 187)} {
+			b := testkit.NewBackend(t)
+			b.Handle(http.MethodGet, "/cli/chats", testkit.JSON(422, map[string]any{"error_code": 1999, "message": prefix + secret + " rejected"}))
+			_, err := newClient(b).Chats(t.Context(), secret)
+			got := wantKind(t, err, api.KindValidation)
+			if got.Status != 422 || got.Code != 1999 || got.Message != prefix+"*** rejected" {
+				t.Errorf("incorrect redacted validation error: %#v", got)
+			}
+			testkit.AssertNoSecret(t, secret, got.Message, err.Error())
+			if b.Count() != 1 || b.Last(t).Header.Get("Authorization") != "Bearer "+secret {
+				t.Error("request token was changed or request retried")
+			}
+		}
+	}
 }
 
 func TestCleanMessage(t *testing.T) {

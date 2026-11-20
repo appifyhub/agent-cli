@@ -28,5 +28,9 @@ func execute(ctx context.Context, root *cobra.Command, state *rootState, args []
 		}
 	}()
 	root.SetArgs(args)
-	return Present(deps.Stderr, deps.Text, root.ExecuteContext(ctx), deps.colorEnabled(term.Err))
+	err := root.ExecuteContext(ctx)
+	if err == nil {
+		err = state.helpErr
+	}
+	return Present(deps.Stderr, deps.Text, err, deps.colorEnabled(term.Err))
 }

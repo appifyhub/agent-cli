@@ -193,15 +193,21 @@ func TestReadSecretReportsRawModeFailure(t *testing.T) {
 }
 
 func TestReadSecretRestoresTheTerminalWhenCancelledMidRead(t *testing.T) {
-	pr, pw := io.Pipe()
-	defer func() { _ = pw.Close() }()
-	ctx, cancel := context.WithCancel(context.Background())
+	entered, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	reader := pendingSecretReader{entered: entered, release: release, finished: finished}
+	defer func() {
+		close(release)
+		<-finished
+	}()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 	state := &fakeState{}
 	done := make(chan error, 1)
 	go func() {
-		_, err := readSecret(ctx, bufio.NewReader(pr), io.Discard, state.raw, "*", "Passphrase: ")
+		_, err := readSecret(ctx, bufio.NewReader(reader), io.Discard, state.raw, "*", "Passphrase: ")
 		done <- err
 	}()
+	<-entered
 	cancel()
 	if err := <-done; !errors.Is(err, ErrAborted) {
 		t.Fatalf("err = %v, want ErrAborted", err)
@@ -209,4 +215,15 @@ func TestReadSecretRestoresTheTerminalWhenCancelledMidRead(t *testing.T) {
 	if state.entered != 1 || state.restored != 1 {
 		t.Fatalf("raw mode entered %d times, restored %d times", state.entered, state.restored)
 	}
+}
+
+type pendingSecretReader struct {
+	entered, release, finished chan struct{}
+}
+
+func (r pendingSecretReader) Read([]byte) (int, error) {
+	close(r.entered)
+	<-r.release
+	close(r.finished)
+	return 0, io.EOF
 }

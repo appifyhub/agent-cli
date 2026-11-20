@@ -2,6 +2,9 @@ package api_test
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -112,13 +115,23 @@ func TestOversizedBodyIsUnexpected(t *testing.T) {
 }
 
 func TestCancelledContextIsReportedAsSuch(t *testing.T) {
-	b := testkit.NewBackend(t)
-	b.Handle("GET", "/cli/chats", testkit.Response{Status: 200, Body: "[]", Delay: 2 * time.Second})
+	entered := make(chan struct{})
 	ctx, cancel := context.WithCancel(t.Context())
-	time.AfterFunc(30*time.Millisecond, cancel)
-	_, err := newClient(b).Chats(ctx, secretToken)
-	if err == nil || api.IsKind(err, api.KindUnreachable) {
-		t.Errorf("got %v, want the context error", err)
+	defer cancel()
+	client := api.New(api.Options{BaseURL: "http://backend.test", Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		close(entered)
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})})
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.Chats(ctx, secretToken)
+		done <- err
+	}()
+	<-entered
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Errorf("got %v, want context.Canceled", err)
 	}
 }
 
@@ -154,5 +167,110 @@ func TestVerboseHookIsSilentForTransportFailures(t *testing.T) {
 	_, _ = client.Health(t.Context())
 	if called {
 		t.Error("OnError is for backend answers only")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type failingBodyReader struct{}
+
+func (failingBodyReader) Read([]byte) (int, error) { return 0, errors.New("response read failed") }
+
+type trackedResponseBody struct {
+	io.Reader
+	closes int
+}
+
+func (b *trackedResponseBody) Close() error {
+	b.closes++
+	return nil
+}
+
+func unusableBody(content string, oversized bool) *trackedResponseBody {
+	var tail io.Reader = failingBodyReader{}
+	if oversized {
+		tail = strings.NewReader(strings.Repeat(" ", (4<<20)+1))
+	}
+	return &trackedResponseBody{Reader: io.MultiReader(strings.NewReader(content), tail)}
+}
+
+func TestUnusableErrorBodiesPreserveStatus(t *testing.T) {
+	for _, oversized := range []bool{false, true} {
+		for _, c := range []struct {
+			status int
+			token  string
+			kind   api.Kind
+		}{
+			{401, secretToken, api.KindTokenRejected},
+			{429, secretToken, api.KindRateLimited},
+			{503, secretToken, api.KindServerFault},
+			{401, "", api.KindInvalidConnectKey},
+		} {
+			body := unusableBody(`{"error_code":1034,"message":"must not survive"}`, oversized)
+			requests, hooks, sends := 0, 0, 0
+			client := api.New(api.Options{
+				BaseURL: "http://backend.test",
+				Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					sends++
+					return &http.Response{StatusCode: c.status, Body: body}, nil
+				}),
+				OnRequest: func() { requests++ },
+				OnError: func(status, code int) {
+					hooks++
+					if status != c.status || code != 0 {
+						t.Errorf("hook status/code = %d/%d", status, code)
+					}
+				},
+			})
+			var err error
+			if c.token == "" {
+				_, err = client.Connect(t.Context(), connectRequest())
+			} else {
+				_, err = client.Chats(t.Context(), c.token)
+			}
+			got := wantKind(t, err, c.kind)
+			if got.Status != c.status || got.Code != 0 || got.Message != "" || got.Detail || requests != 1 || hooks != 1 || sends != 1 || body.closes != 1 {
+				t.Errorf("oversized=%v: error %#v, requests/hooks/sends/closes %d/%d/%d/%d", oversized, got, requests, hooks, sends, body.closes)
+			}
+		}
+	}
+}
+
+func TestRequiredSuccessBodiesRemainStrict(t *testing.T) {
+	for _, oversized := range []bool{false, true} {
+		for _, endpoint := range []string{"connect", "chats", "health"} {
+			content := `{"token":"t","expires_at":"2027-02-14T09:21:00Z","user_id":"u","user_display_name":"Neo"}`
+			switch endpoint {
+			case "chats":
+				content = "[]"
+			case "health":
+				content = `{"status":"ok"}`
+			}
+			body := unusableBody(content, oversized)
+			requests := 0
+			client := api.New(api.Options{BaseURL: "http://backend.test", Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				requests++
+				return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
+			})})
+			var err error
+			switch endpoint {
+			case "connect":
+				_, err = client.Connect(t.Context(), connectRequest())
+			case "chats":
+				_, err = client.Chats(t.Context(), secretToken)
+			case "health":
+				_, err = client.Health(t.Context())
+			}
+			kind := api.KindUnreachable
+			if oversized {
+				kind = api.KindUnexpected
+			}
+			got := wantKind(t, err, kind)
+			if got.Status != 200 || requests != 1 || body.closes != 1 {
+				t.Errorf("%s oversized=%v: error %#v, requests/closes %d/%d", endpoint, oversized, got, requests, body.closes)
+			}
+		}
 	}
 }

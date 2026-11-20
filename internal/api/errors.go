@@ -127,10 +127,13 @@ func tokenRejected(status, code int) bool {
 }
 
 // errorFromResponse builds the Error of a non-success answer from its status and body.
-func errorFromResponse(authenticated bool, status int, body []byte) *Error {
+func errorFromResponse(token string, status int, body []byte) *Error {
 	code, message, detail := decodeErrorBody(body)
+	if token != "" {
+		message = strings.ReplaceAll(message, token, "***")
+	}
 	return &Error{
-		Kind:    Classify(authenticated, status, code),
+		Kind:    Classify(token != "", status, code),
 		Status:  status,
 		Code:    code,
 		Message: CleanMessage(message),

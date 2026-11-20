@@ -17,7 +17,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 	"unicode/utf8"
+
+	"github.com/appifyhub/agent-cli/internal/config"
 )
 
 const binDirEnv = "THE_AGENT_CLI_E2E_BIN_DIR"
@@ -205,6 +208,8 @@ func TestBinaries(t *testing.T) {
 			})
 
 			t.Run("connect", func(t *testing.T) {
+				started := time.Now()
+				expires := started.AddDate(1, 0, 0).UTC().Truncate(time.Second)
 				for _, args := range [][]string{{"status", "--help"}, {"help", "status"}} {
 					r := run(t, bin, args...)
 					if r.code != 0 || !strings.Contains(r.stdout, "Usage: "+name+" status") || r.stderr != "" {
@@ -244,7 +249,7 @@ func TestBinaries(t *testing.T) {
 						return
 					}
 					w.Header().Set("Content-Type", "application/json")
-					_, _ = io.WriteString(w, `{"token":"test-token","expires_at":"2027-02-14T09:21:00Z","user_id":"u1","user_display_name":"Tester","credit_balance":500}`)
+					_ = json.NewEncoder(w).Encode(map[string]any{"token": "test-token", "expires_at": expires.Format(time.RFC3339), "user_id": "u1", "user_display_name": "Tester", "credit_balance": 500})
 				}))
 				defer backend.Close()
 				home := filepath.Join(t.TempDir(), "state")
@@ -264,6 +269,10 @@ func TestBinaries(t *testing.T) {
 				metadata, err := os.ReadFile(filepath.Join(home, "config.toml"))
 				if err != nil || !strings.Contains(string(metadata), `user_id = 'u1'`) || strings.Contains(string(metadata), "test-token") {
 					t.Errorf("connection metadata: %q, %v", metadata, err)
+				}
+				persisted, err := config.Load(config.Path(home))
+				if err != nil || !persisted.Token.ExpiresAt.Equal(expires) || !persisted.Token.ExpiresAt.After(started.Add(300*24*time.Hour)) {
+					t.Errorf("persisted expiry does not match the future connection fixture: %v", err)
 				}
 				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "status", "-v")
 				if r.code != 0 || r.stderr != "" || !strings.Contains(r.stdout, "Connected as Tester (") || !strings.Contains(r.stdout, "(NOT encrypted)") || !strings.Contains(r.stdout, "  Backend: "+backend.URL+"\n") || strings.Contains(r.stdout, "test-token") {

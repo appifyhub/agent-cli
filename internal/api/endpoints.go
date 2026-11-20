@@ -91,7 +91,10 @@ func (c *Client) Connect(ctx context.Context, r ConnectRequest) (Connection, err
 // RevokeAll removes every CLI token of the user. Any 2xx answer is success: the revocation has
 // happened whatever the body says.
 func (c *Client) RevokeAll(ctx context.Context, token, userID string) error {
-	_, _, err := c.call(ctx, http.MethodDelete, "/cli/user/"+url.PathEscape(userID)+"/devices", token, nil)
+	status, _, err := c.call(ctx, http.MethodDelete, "/cli/user/"+url.PathEscape(userID)+"/devices", token, nil)
+	if status >= 200 && status < 300 {
+		return nil
+	}
 	return err
 }
 
@@ -136,8 +139,8 @@ func (c *Client) NotifyChat(ctx context.Context, token, chatID, message string) 
 }
 
 func (c *Client) notify(ctx context.Context, path, token string, payload any) (Delivery, error) {
-	_, body, err := c.call(ctx, http.MethodPost, path, token, payload)
-	if err != nil {
+	status, body, err := c.call(ctx, http.MethodPost, path, token, payload)
+	if err != nil && (status < 200 || status >= 300) {
 		return Delivery{}, err
 	}
 	var delivery Delivery

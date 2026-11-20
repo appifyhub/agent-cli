@@ -11,6 +11,7 @@
 - All user-facing text (help, hints, messages, errors, glyphs) lives in `internal/text/strings.toml` and is reached only through the catalog; Go code passes keys and data, never English sentences. Per-OS variants are sibling keys with a `_<goos>` or `_unix` suffix. The command name is always the `{name}` placeholder, because the name is a build-time value.
 - Results go to stdout; prompts, warnings, errors and verbose lines go to stderr. Only `internal/term` and `cmd/agent-cli` touch `os.Stdout` or `os.Stderr`, and nothing uses `fmt.Print*` (`forbidigo` enforces it).
 - Secrets (tokens, passphrases, connect keys) are never logged, never printed in errors or verbose output, never written to `config.toml` and never passed in argv. Text that originates outside the process goes through `term.Clean` before printing.
+- Redact known secrets from complete external error text before cleaning, normalization or truncation; terminal sanitization is not secret redaction.
 
 ### Testing
 
@@ -21,6 +22,7 @@
 - Every spec scenario maps to at least one test. Tests that need POSIX permission bits or the shell tools skip on Windows.
 - Test behavior, not construction or wiring. Ask before creating new test files outside the ones a task names.
 - Synchronize concurrent tests on observable completion, not sleeps. Assert consumer-visible behavior and safety contracts, not incidental implementation details.
+- Filter inherited application environment variables in test subprocesses before applying explicit test values. When testing real-clock binaries, derive future expiries from the scenario start rather than hard-coded dates; use injected clocks for exact time assertions.
 - Always run the whole gate before a stop or a pull request: `go build ./... && go vet ./... && go test -race -count=1 ./... && golangci-lint run && sh scripts/e2e.sh`. Windows runs the tests without `-race`.
 
 ### Comments
@@ -34,6 +36,8 @@
 Domain packages return typed errors; `cli` maps each to an exit code and a catalog key in one table and prints it through `cli.Present` (`error: <text>`). Exit codes are the constants in `internal/cli`: 0 ok, 1 failure, 2 usage or validation, 3 not connected, locked or revoked, 4 chat unreachable, 5 insufficient credits, 6 rate limited; no other code is used. Never print an error anywhere else, and wrap with `%w` to keep the chain.
 
 Use `errors.Is` and `errors.As` for wrapped errors, never message-string comparisons. Handle or propagate failures of required writes and finalization; do not report success after required persistence fails. Expected operational failures return errors, not panics or process exits.
+
+Keep received HTTP status outcomes separate from response-body usability. A failed body read must not erase status-defined authentication or rate-limit handling; whether a successful response requires a usable body is the endpoint's contract.
 
 ---
 

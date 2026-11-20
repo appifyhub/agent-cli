@@ -1,8 +1,11 @@
 package cli_test
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -251,6 +254,33 @@ func TestConnectUsageAndPreflightFailures(t *testing.T) {
 			}
 		})
 	}
+	for _, spelling := range [][]string{{"--store", ""}, {"--store="}} {
+		for _, connected := range []bool{false, true} {
+			t.Run(strings.Join(spelling, " ")+"/connected="+strconv.FormatBool(connected), func(t *testing.T) {
+				r := newConnectRig(t, "linux")
+				if connected {
+					r = newChatsRig(t, "linux")
+				}
+				before := statusSnapshot(t, r.home)
+				secrets := r.keychain.Len()
+				got := r.run(t, append([]string{connectKey}, spelling...)...)
+				if got.Code != 2 || got.Stdout != "" || got.Stderr != "error: invalid --store \"\": use keychain, passphrase, or unsafe\n" {
+					t.Fatal(got)
+				}
+				if len(r.terminal.Prompts) != 0 || len(r.keychain.Calls) != 0 || r.backend.Count() != 0 || statusSnapshot(t, r.home) != before || r.keychain.Len() != secrets {
+					t.Error("invalid empty store accessed or changed connection state")
+				}
+				if secret, exists := r.keychain.Secret(r.deps.Build.Name, connectDevice); exists != connected || connected && secret != connectSecret {
+					t.Error("invalid empty store changed the stored credential")
+				}
+				if !connected {
+					if _, err := os.Stat(r.home); !os.IsNotExist(err) {
+						t.Error("invalid empty store created the state directory")
+					}
+				}
+			})
+		}
+	}
 }
 
 func TestConnectBackendFailuresPreservePreviousConnection(t *testing.T) {
@@ -269,26 +299,39 @@ func TestConnectBackendFailuresPreservePreviousConnection(t *testing.T) {
 		{testkit.Err(422, 1045, "device"), 1, "the server rejected this machine's details; please report this"},
 		{testkit.JSON(200, map[string]any{"token": "t"}), 1, "unexpected response from the server"},
 		{testkit.Err(422, 1999, connectKey+" secretphrase"), 2, "*** ***"},
+		{testkit.Err(422, 1999, strings.Repeat("x", 187)+connectKey), 2, strings.Repeat("x", 187) + "***"},
 	} {
-		r := newConnectRig(t, "linux")
-		old := config.File{DeviceID: connectDevice, APIURL: "https://previous.example.test", Token: config.Token{Store: "unsafe", UserID: "u1"}, Default: config.Default{Platform: "telegram"}}
-		r.save(t, old)
-		secretPath := filepath.Join(r.home, "credentials")
-		if err := os.WriteFile(secretPath, []byte("old token\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		r.vars[config.EnvPassphrase] = "secretphrase"
-		r.backend.Handle("POST", "/cli/connect", c.resp)
-		result := r.run(t, connectKey, "--store", "unsafe", "--ttl", "1h30m")
-		if result.Code != c.code || result.Stdout != "" || result.Stderr != "error: "+c.message+"\n" {
-			t.Errorf("response %+v: %+v", c.resp, result)
-		}
-		if got := r.file(t); got != old {
-			t.Errorf("previous config changed: %+v", got)
-		}
-		raw, _ := os.ReadFile(secretPath)
-		if string(raw) != "old token\n" {
-			t.Error("old token was replaced on failure")
+		for _, verbose := range []bool{false, true} {
+			r := newConnectRig(t, "linux")
+			old := config.File{DeviceID: connectDevice, APIURL: "https://previous.example.test", Token: config.Token{Store: "unsafe", UserID: "u1"}, Default: config.Default{Platform: "telegram"}}
+			r.save(t, old)
+			secretPath := filepath.Join(r.home, "credentials")
+			if err := os.WriteFile(secretPath, []byte("old token\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			r.vars[config.EnvPassphrase] = "secretphrase"
+			r.backend.Handle("POST", "/cli/connect", c.resp)
+			args := []string{connectKey, "--store", "unsafe", "--ttl", "1h30m"}
+			if verbose {
+				args = append(args, "-v")
+			}
+			result := r.run(t, args...)
+			want := "error: " + c.message + "\n"
+			validStderr := result.Stderr == want
+			if verbose {
+				validStderr = strings.HasPrefix(result.Stderr, "Calling backend…\n") && strings.HasSuffix(result.Stderr, want) && strings.Count(result.Stderr, "error: ") == 1
+			}
+			if result.Code != c.code || result.Stdout != "" || !validStderr || r.backend.Count() != 1 {
+				t.Errorf("response %+v verbose=%v: %+v", c.resp, verbose, result)
+			}
+			if got := r.file(t); got != old {
+				t.Errorf("previous config changed: %+v", got)
+			}
+			raw, _ := os.ReadFile(secretPath)
+			if string(raw) != "old token\n" {
+				t.Error("old token was replaced on failure")
+			}
+			testkit.AssertNoSecret(t, connectKey[:len(connectKey)-1], result.Stdout, result.Stderr)
 		}
 	}
 }
@@ -559,6 +602,29 @@ func TestRevokeOutcomes(t *testing.T) {
 			t.Fatal(got)
 		}
 	})
+	for _, oversized := range []bool{false, true} {
+		for _, status := range []int{200, 401, 429} {
+			r := newChatsRig(t, "linux")
+			before := r.file(t)
+			body := setUnusableCommandResponse(r, status, oversized)
+			got := testkit.Run(t, r.deps, "revoke-all", "--yes")
+			code, out, stderr := 0, "✓ Access revoked for all CLIs. Local token removed.\n", ""
+			switch status {
+			case 401:
+				out = "✓ Already revoked. Local token removed.\n"
+			case 429:
+				code, out, stderr = 6, "", "error: rate limited; wait a moment and try again\n"
+			}
+			remove := status != 429
+			if remove {
+				before.Token = config.Token{}
+			}
+			if got.Code != code || got.Stdout != out || got.Stderr != stderr || body.requests != 1 || body.closes != 1 || r.file(t) != before || (r.keychain.Len() == 0) != remove {
+				t.Fatalf("status=%d oversized=%v: %+v", status, oversized, got)
+			}
+			testkit.AssertNoSecret(t, connectSecret, got.Stdout, got.Stderr)
+		}
+	}
 }
 
 func TestRevokeEnvironmentToken(t *testing.T) {
@@ -1181,6 +1247,45 @@ func TestChatsSharedBackendFailures(t *testing.T) {
 			})
 		}
 	}
+	for _, oversized := range []bool{false, true} {
+		for _, environment := range []bool{false, true} {
+			for _, status := range []int{401, 429} {
+				for _, command := range [][]string{{"chats"}, {"notify", "hi"}} {
+					r := newChatsRig(t, "linux")
+					before := r.file(t)
+					secret := connectSecret
+					if environment {
+						secret = testkit.NewToken(testkit.TokenClaims{Sub: "neo", Exp: connectExpiry})
+						r.vars[config.EnvToken] = secret
+					}
+					body := setUnusableCommandResponse(r, status, oversized)
+					got := testkit.Run(t, r.deps, command...)
+					code, message := 6, "error: rate limited; wait a moment and try again\n"
+					remove := status == 401 && !environment
+					if status == 401 {
+						code = 3
+						message = "This CLI is not connected. Run `agent-cli connect <KEY>`.\n"
+						if environment {
+							message = "error: the token in THE_AGENT_CLI_TOKEN was rejected by the server (expired or revoked)\n"
+						}
+					}
+					if got.Code != code || got.Stdout != "" || got.Stderr != message || body.requests != 1 || body.closes != 1 || body.authorization != "Bearer "+secret {
+						t.Fatalf("%v status=%d oversized=%v environment=%v: %+v", command, status, oversized, environment, got)
+					}
+					if remove {
+						before.Token = config.Token{}
+					}
+					if r.file(t) != before || (r.keychain.Len() == 0) != remove {
+						t.Error("unusable error body changed authentication cleanup")
+					}
+					if stored, exists := r.keychain.Secret(r.deps.Build.Name, connectDevice); exists != !remove || !remove && stored != connectSecret {
+						t.Error("unusable response changed the stored secret")
+					}
+					testkit.AssertNoSecret(t, secret, got.Stdout, got.Stderr)
+				}
+			}
+		}
+	}
 }
 
 type chatsOfflineTransport struct{}
@@ -1434,6 +1539,25 @@ func TestNotifySuccessResponses(t *testing.T) {
 			}
 		})
 	}
+	for _, oversized := range []bool{false, true} {
+		for _, verbose := range []bool{false, true} {
+			for _, target := range [][]string{nil, {"--platform", "telegram"}} {
+				r := newChatsRig(t, "linux")
+				before := r.file(t)
+				body := setUnusableCommandResponse(r, 202, oversized)
+				args := append([]string{"hi"}, target...)
+				wantOut, wantErr := "", ""
+				if verbose {
+					args = append(args, "-v")
+					wantOut, wantErr = "✓ Sent\n", "Calling backend…\n"
+				}
+				got := runNotifyTest(t, r, args...)
+				if got.Code != 0 || got.Stdout != wantOut || got.Stderr != wantErr || body.requests != 1 || body.closes != 1 || r.file(t) != before || r.keychain.Len() != 1 {
+					t.Fatalf("oversized=%v verbose=%v target=%v: %+v", oversized, verbose, target, got)
+				}
+			}
+		}
+	}
 }
 
 func stringPointer(s string) *string { return &s }
@@ -1675,4 +1799,127 @@ func TestUnlockAssignmentNeverColored(t *testing.T) {
 	if got.Code != 0 || got.Stdout != "export THE_AGENT_CLI_TOKEN='"+connectSecret+"'\n" || !strings.Contains(got.Stderr, "\x1b[32m✓ Unlocked for this terminal session\x1b[0m") {
 		t.Fatal(got)
 	}
+}
+
+type commandRoundTrip func(*http.Request) (*http.Response, error)
+
+func (f commandRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type commandReadFailure struct{}
+
+func (commandReadFailure) Read([]byte) (int, error) { return 0, errors.New("input sentinel") }
+
+type commandResponseBody struct {
+	io.Reader
+	requests, closes int
+	authorization    string
+}
+
+func (b *commandResponseBody) Close() error {
+	b.closes++
+	return nil
+}
+
+func setUnusableCommandResponse(r *connectRig, status int, oversized bool) *commandResponseBody {
+	var tail io.Reader = commandReadFailure{}
+	if oversized {
+		tail = strings.NewReader(strings.Repeat(" ", (4<<20)+1))
+	}
+	body := &commandResponseBody{Reader: io.MultiReader(strings.NewReader(`{"error_code":1034,"message":"discard this","chat_id":"c1","platform":"telegram","is_private":true,"credit_balance":1}`), tail)}
+	r.deps.HTTP = commandRoundTrip(func(request *http.Request) (*http.Response, error) {
+		body.requests++
+		body.authorization = request.Header.Get("Authorization")
+		return &http.Response{StatusCode: status, Body: body}, nil
+	})
+	return body
+}
+
+func TestAuthenticatedValidationRedactsTokens(t *testing.T) {
+	for _, environment := range []bool{false, true} {
+		for _, verbose := range []bool{false, true} {
+			for _, boundary := range []bool{false, true} {
+				r := newChatsRig(t, "linux")
+				before := statusSnapshot(t, r.home)
+				secret := connectSecret
+				if environment {
+					secret = testkit.NewToken(testkit.TokenClaims{Sub: "neo", Exp: connectExpiry})
+					r.vars[config.EnvToken] = secret
+				}
+				prefix := "Invalid token "
+				if boundary {
+					prefix = strings.Repeat("x", 187)
+				}
+				r.backend.Handle("GET", "/cli/chats", testkit.JSON(422, map[string]any{"error_code": 1999, "message": prefix + secret + " rejected"}))
+				args := []string{"chats"}
+				wantErr := "error: " + prefix + "*** rejected\n"
+				if verbose {
+					args = append(args, "-v")
+					wantErr = "Calling backend…\n  (HTTP 422, code 1999)\n" + wantErr
+				}
+				got := testkit.Run(t, r.deps, args...)
+				if got.Code != 2 || got.Stdout != "" || got.Stderr != wantErr || r.backend.Count() != 1 || statusSnapshot(t, r.home) != before || r.keychain.Len() != 1 {
+					t.Fatalf("environment=%v verbose=%v boundary=%v: %+v", environment, verbose, boundary, got)
+				}
+				if stored, exists := r.keychain.Secret(r.deps.Build.Name, connectDevice); !exists || stored != connectSecret {
+					t.Error("validation failure changed the stored secret")
+				}
+				if r.backend.Last(t).Header.Get("Authorization") != "Bearer "+secret {
+					t.Error("redaction altered the request token")
+				}
+				testkit.AssertNoSecret(t, secret, got.Stdout, got.Stderr)
+				testkit.AssertNoSecret(t, secret[:13], got.Stdout, got.Stderr)
+			}
+		}
+	}
+}
+
+type commandWriteFailure struct{}
+
+func (commandWriteFailure) Write([]byte) (int, error) { return 0, errors.New("output sentinel") }
+
+func TestOperationalFailuresUseCatalog(t *testing.T) {
+	t.Run("stdin", func(t *testing.T) {
+		r := newChatsRig(t, "linux")
+		before := statusSnapshot(t, r.home)
+		r.deps.Stdin = commandReadFailure{}
+		got := testkit.Run(t, r.deps, "notify")
+		if got.Code != 1 || got.Stdout != "" || got.Stderr != "error: operation failed\n" || r.backend.Count() != 0 || len(r.keychain.Calls) != 0 || statusSnapshot(t, r.home) != before {
+			t.Fatal(got)
+		}
+	})
+	t.Run("required output", func(t *testing.T) {
+		r := newChatsRig(t, "linux")
+		before := statusSnapshot(t, r.home)
+		var stderr bytes.Buffer
+		r.deps.Stdout, r.deps.Stderr = commandWriteFailure{}, &stderr
+		code := cli.Run(t.Context(), r.deps, []string{"chats"})
+		if code != 1 || stderr.String() != "error: operation failed\n" || r.backend.Count() != 1 || statusSnapshot(t, r.home) != before || r.keychain.Len() != 1 {
+			t.Fatalf("code %d, stderr %q", code, stderr.String())
+		}
+	})
+	t.Run("in-flight cancellation", func(t *testing.T) {
+		r := newChatsRig(t, "linux")
+		before := statusSnapshot(t, r.home)
+		entered := make(chan struct{})
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		requests := 0
+		r.deps.HTTP = commandRoundTrip(func(request *http.Request) (*http.Response, error) {
+			requests++
+			close(entered)
+			<-request.Context().Done()
+			return nil, request.Context().Err()
+		})
+		var stdout, stderr bytes.Buffer
+		r.deps.Stdout, r.deps.Stderr = &stdout, &stderr
+		done := make(chan int, 1)
+		go func() { done <- cli.Run(ctx, r.deps, []string{"chats", "-v"}) }()
+		<-entered
+		cancel()
+		code := <-done
+		if code != 1 || stdout.Len() != 0 || stderr.String() != "Calling backend…\nerror: operation cancelled\n" || requests != 1 || statusSnapshot(t, r.home) != before || r.keychain.Len() != 1 {
+			t.Fatalf("code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
+		}
+		testkit.AssertNoSecret(t, connectSecret, stdout.String(), stderr.String())
+	})
 }

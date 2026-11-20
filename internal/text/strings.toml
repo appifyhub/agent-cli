@@ -89,6 +89,8 @@ no_color = "Turns colors off when set to any value."
 [error]
 line = "error: {message}"
 unexpected = "unexpected internal error"
+failed = "operation failed"
+cancelled = "operation cancelled"
 home_unavailable = "could not determine your home directory; set THE_AGENT_CLI_HOME"
 home_unusable = "cannot use the home directory {path}: {reason}"
 config_unreadable = "could not read {path}: {reason}; fix or delete the file"

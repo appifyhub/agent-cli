@@ -23,11 +23,17 @@ func (s *rootState) connectCommand() *cobra.Command {
 		Use:   "connect <KEY>",
 		Short: cat.T("command.connect.short"),
 		Long:  cat.T("command.connect.long"),
-		Args: func(_ *cobra.Command, args []string) error {
+		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 || len(args) == 1 && strings.TrimSpace(args[0]) == "" {
 				return usageError(cat.T("connect.missing_key", "name", name))
 			}
-			return cobra.ExactArgs(1)(nil, args)
+			if err := cobra.ExactArgs(1)(cmd, args); err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("store") && !credentials.Mode(mode).Valid() {
+				return s.failure(&credentials.StoreFlagError{Value: mode})
+			}
+			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return s.runConnect(cmd.Context(), strings.ToUpper(strings.TrimSpace(args[0])), mode, ttl, cmd.Flags().Changed("ttl"))
@@ -142,6 +148,9 @@ func (s *rootState) connectFailure(err error, ttl string, secrets ...string) err
 		case backend.Kind == api.KindTTLTooLong:
 			return &Failure{Code: ExitUsage, Message: cat.T("error.ttl_too_long")}
 		}
+		redacted := *backend
+		redacted.Message = redactSecrets(backend.Message, secrets...)
+		err = &redacted
 	}
 	translated := s.failure(err)
 	var failure *Failure

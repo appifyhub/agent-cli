@@ -56,7 +56,13 @@ func run(t *testing.T, dir string, env []string, script string, args ...string) 
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "sh", append([]string{script}, args...)...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), append([]string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null"}, env...)...)
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "THE_AGENT_CLI_") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	cmd.Env = append(cmd.Env, env...)
 	out, err := cmd.CombinedOutput()
 	var exitErr *exec.ExitError
 	switch {
@@ -170,6 +176,7 @@ func TestBumpRefusesToRunOutsideTheProjectRoot(t *testing.T) {
 
 func TestBuildVariants(t *testing.T) {
 	skipOnWindows(t)
+	t.Setenv("THE_AGENT_CLI_BUILD_API_URL", "https://ambient.example.test")
 	repo, err := filepath.Abs("..")
 	if err != nil {
 		t.Fatal(err)
@@ -202,7 +209,7 @@ func TestBuildVariants(t *testing.T) {
 		if !strings.Contains(content, c.url) {
 			t.Errorf("%s: binary lacks its API URL %s", c.variant, c.url)
 		}
-		for _, url := range []string{stagingURL, productionURL, "https://from-env.test"} {
+		for _, url := range []string{stagingURL, productionURL, "https://from-env.test", "https://ambient.example.test"} {
 			if url != c.url && strings.Contains(content, url) {
 				t.Errorf("%s: binary contains the foreign API URL %s", c.variant, url)
 			}
@@ -416,6 +423,8 @@ func TestReleaseSnapshotPublishesNothing(t *testing.T) {
 }
 
 func TestReleaseFailureRemovesTheTag(t *testing.T) {
+	t.Setenv("THE_AGENT_CLI_TOKEN", "synthetic-ambient-token")
+	t.Setenv("THE_AGENT_CLI_PASSPHRASE", "synthetic-ambient-passphrase")
 	r := newReleaseRepo(t, "0.2.0\n", "first")
 	code, out := r.run(t, []string{"STUB_EXIT=1"}, "ga")
 	if code == 0 || !strings.Contains(out, "Publishing failed") {
@@ -425,6 +434,11 @@ func TestReleaseFailureRemovesTheTag(t *testing.T) {
 		t.Errorf("the tag must be removed after a failed publish: origin %q", r.originTags(t))
 	}
 	assertContainsAll(t, "cleanup", r.log(t), "call gh release delete v0.2.0 --yes")
+	for _, secret := range []string{"synthetic-ambient-token", "synthetic-ambient-passphrase"} {
+		if strings.Contains(r.log(t)+out, secret) {
+			t.Error("ambient secret reached the release stub or its output")
+		}
+	}
 	if _, err := os.Stat(r.output); !os.IsNotExist(err) {
 		t.Errorf("no outputs must be written for a failed release")
 	}
