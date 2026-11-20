@@ -2,6 +2,7 @@
 package render
 
 import (
+	"path/filepath"
 	"strings"
 )
 
@@ -10,7 +11,11 @@ import (
 // are ignored when matching, as the file system does.
 func DisplayPath(path, home, goos string) string {
 	windows := goos == "windows"
-	normalized, prefix := slashes(path, windows), strings.TrimRight(slashes(home, windows), "/")
+	normalized, prefix := path, home
+	if filepath.VolumeName(home) != "" {
+		normalized, prefix = filepath.ToSlash(path), filepath.ToSlash(home)
+	}
+	normalized, prefix = slashes(normalized, windows), strings.TrimRight(slashes(prefix, windows), "/")
 	if prefix == "" || len(normalized) < len(prefix) {
 		return path
 	}
