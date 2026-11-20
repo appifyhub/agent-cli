@@ -12,7 +12,7 @@ import (
 func DisplayPath(path, home, goos string) string {
 	windows := goos == "windows"
 	normalized, prefix := path, home
-	if filepath.VolumeName(home) != "" {
+	if filepath.VolumeName(home) != "" || filepath.Separator == '\\' && strings.HasPrefix(path, `\`) {
 		normalized, prefix = filepath.ToSlash(path), filepath.ToSlash(home)
 	}
 	normalized, prefix = slashes(normalized, windows), strings.TrimRight(slashes(prefix, windows), "/")
