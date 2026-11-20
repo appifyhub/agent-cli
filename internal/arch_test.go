@@ -20,6 +20,7 @@ var allowed = map[string][]string{
 	"text":        {},
 	"term":        {},
 	"token":       {},
+	"agentskill":  {},
 	"config":      {"buildinfo"},
 	"api":         {"buildinfo"},
 	"credentials": {"config", "token", "term"},

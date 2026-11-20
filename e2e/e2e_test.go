@@ -552,3 +552,143 @@ func TestUnlockBuilds(t *testing.T) {
 		})
 	}
 }
+
+func TestSkillBinaries(t *testing.T) {
+	for _, name := range variants(t) {
+		t.Run(name, func(t *testing.T) {
+			bin, err := filepath.Abs(binary(t, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			home := filepath.Join(root, "home")
+			cwd := filepath.Join(root, "plain", "nested")
+			state := filepath.Join(root, "cli-state")
+			if err := os.MkdirAll(cwd, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(cwd)
+			env := []string{"HOME=" + home, "USERPROFILE=" + home, "CLAUDE_CONFIG_DIR=", "THE_AGENT_CLI_HOME=" + state, "THE_AGENT_CLI_TOKEN=private-token-value", "THE_AGENT_CLI_PASSPHRASE=private-passphrase-value"}
+			check := func(code int, args ...string) result {
+				t.Helper()
+				got := execute(t, bin, env, args...)
+				if got.code != code {
+					t.Fatalf("%v: %+v", args, got)
+				}
+				if strings.Contains(got.stdout+got.stderr, "private-token-value") || strings.Contains(got.stdout+got.stderr, "private-passphrase-value") {
+					t.Fatal("secret leaked")
+				}
+				if _, err := os.Stat(state); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("CLI state directory created", err)
+				}
+				return got
+			}
+			guide := check(0, "skill", "show")
+			if guide.stderr != "" || !strings.Contains(guide.stdout, name+" notify") || strings.Count(guide.stdout, "\n") > 200 {
+				t.Fatal(guide)
+			}
+			pointer := check(0, "skill", "show", "--pointer")
+			if pointer.stderr != "" || !strings.Contains(pointer.stdout, name+" skill show") || strings.Count(pointer.stdout, "\n") > 6 {
+				t.Fatal(pointer)
+			}
+			if _, err := os.Stat(home); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("show created user home", err)
+			}
+			if a, b := check(0, "skill"), check(0, "skill", "--help"); a != b {
+				t.Fatal("group help mismatch", a, b)
+			}
+			for _, args := range [][]string{{"skill", "setup"}, {"skill", "install"}, {"skill", "install", "nope"}, {"skill", "install", "codex", "claude"}, {"skill", "status", "--agent", "nope"}, {"skill", "remove", "--agent", "nope"}, {"skill", "install", "codex", "--user", "--project"}, {"skill", "status", "--user", "--project"}, {"skill", "remove", "--user", "--project"}} {
+				check(2, args...)
+			}
+			for _, project := range []bool{false, true} {
+				scope, base := "--user", home
+				if project {
+					scope, base = "--project", cwd
+				}
+				missing := check(0, "skill", "status", scope)
+				if strings.Count(missing.stdout, "missing") != 9 {
+					t.Fatal(missing)
+				}
+				check(0, "skill", "install", "codex", scope, "--dry-run")
+				if _, err := os.Stat(filepath.Join(base, ".agents")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("dry run wrote", err)
+				}
+				for _, agent := range []string{"claude", "codex", "opencode", "pi", "omp", "windsurf", "cursor", "gemini", "antigravity"} {
+					parent := filepath.Join(base, ".agents", "skills")
+					if agent == "claude" {
+						parent = filepath.Join(base, ".claude", "skills")
+					}
+					if agent == "antigravity" && !project {
+						parent = filepath.Join(home, ".gemini", "config", "skills")
+					}
+					path := filepath.Join(parent, name, "SKILL.md")
+					args := []string{"skill", "install", agent}
+					if project {
+						args = append(args, scope)
+					}
+					check(0, args...)
+					raw, err := os.ReadFile(path)
+					if err != nil || !strings.Contains(string(raw), "name: "+name+"\n") || !strings.Contains(string(raw), name+" skill show") {
+						t.Fatal(agent, path, string(raw), err)
+					}
+					if strings.Contains(string(raw), "private-token-value") || strings.Contains(string(raw), "private-passphrase-value") {
+						t.Fatal("written secret")
+					}
+					unchanged := check(0, "skill", "install", agent, scope)
+					if !strings.Contains(unchanged.stdout, "unchanged") {
+						t.Fatal(unchanged)
+					}
+					status := check(0, "skill", "status", scope, "--agent", agent)
+					if !strings.Contains(status.stdout, "current") {
+						t.Fatal(status)
+					}
+				}
+				codex := filepath.Join(base, ".agents", "skills", name, "SKILL.md")
+				if err := os.WriteFile(codex, []byte("foreign skill\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				conflict := check(1, "skill", "install", "codex", scope)
+				if !strings.Contains(conflict.stdout, "conflict") {
+					t.Fatal(conflict)
+				}
+				check(0, "skill", "remove", "codex", scope)
+				if raw, err := os.ReadFile(codex); err != nil || string(raw) != "foreign skill\n" {
+					t.Fatal("foreign modified", err)
+				}
+				check(0, "skill", "install", "codex", scope, "--force")
+				check(0, "skill", "remove", scope, "--all", "--dry-run")
+				if _, err := os.Stat(codex); err != nil {
+					t.Fatal(err)
+				}
+				shared := check(0, "skill", "remove", scope, "--all")
+				if strings.Count(shared.stdout, "removed") != 9 {
+					t.Fatal("shared removal not deduplicated", shared)
+				}
+				check(0, "skill", "remove", scope, "--all")
+				for _, parent := range []string{filepath.Join(base, ".agents", "skills"), filepath.Join(base, ".claude", "skills")} {
+					if _, err := os.Stat(parent); err != nil {
+						t.Fatal("parent removed", err)
+					}
+				}
+			}
+			if err := os.MkdirAll(filepath.Join(root, "plain", ".git"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			check(0, "skill", "install", "claude", "--project")
+			if _, err := os.Stat(filepath.Join(root, "plain", ".claude")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("used Git root", err)
+			}
+			override := filepath.Join(root, "custom-claude")
+			env = append(env, "CLAUDE_CONFIG_DIR="+override)
+			check(0, "skill", "install", "claude", "--user")
+			if _, err := os.Stat(filepath.Join(override, "skills", name, "SKILL.md")); err != nil {
+				t.Fatal(err)
+			}
+			check(0, "skill", "remove", "--project", "--all")
+			if _, err := os.Stat(filepath.Join(override, "skills", name, "SKILL.md")); err != nil {
+				t.Fatal("project removal touched user skill", err)
+			}
+			check(0, "skill", "remove", "--user", "--all")
+		})
+	}
+}

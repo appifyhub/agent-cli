@@ -8,7 +8,7 @@ Flags:
 
 Examples:
   eval "$(agent-cli completion zsh)"
-  agent-cli completion bash > /etc/bash_completion.d/agent-cli
+  agent-cli completion bash > "/etc/bash_completion.d/agent-cli"
 
 Environment: none
 Exit codes: 0 ok · 2 usage error or unsupported shell

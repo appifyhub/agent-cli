@@ -12,7 +12,7 @@ import (
 
 // commandOrder is the order of the Commands section of the root help; commands that are not
 // registered yet are simply absent.
-var commandOrder = []string{"connect", "revoke-all", "status", "server", "chats", "notify", "unlock", "env", "completion", "help"}
+var commandOrder = []string{"connect", "revoke-all", "status", "server", "chats", "notify", "unlock", "env", "skill", "completion", "help"}
 
 // help annotations: the environment and exit-code lines of a command's help
 const (
@@ -71,6 +71,7 @@ func newRoot(deps Deps) (*cobra.Command, *rootState) {
 	root.AddCommand(state.notifyCommand())
 	root.AddCommand(state.unlockCommand())
 	root.AddCommand(state.envCommand())
+	root.AddCommand(state.skillCommand())
 	root.AddCommand(state.serverCommand())
 	root.AddCommand(state.completionCommand())
 

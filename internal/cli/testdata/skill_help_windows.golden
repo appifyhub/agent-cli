@@ -1,0 +1,24 @@
+Teach coding agents to use agent-cli. Commands: status, install [agent], remove [agent], show.
+Install and remove require one agent or explicit --all. Agents need not be installed. No hooks, settings changes or instruction-file edits.
+Supported agents: claude, codex, opencode, pi, omp, windsurf, cursor, gemini, antigravity.
+User scope is the default (--user). --project uses the native agent path under the exact current directory, never a Git root.
+User paths: Claude Code uses $CLAUDE_CONFIG_DIR/skills or ~/.claude/skills; Antigravity uses ~/.gemini/config/skills; all others use ~/.agents/skills.
+Project paths: Claude Code uses .claude/skills; all others use .agents/skills. Each path ends in the build's command name.
+Agents sharing a directory share one skill: removing it affects every agent reading that directory.
+For an agent without skill support, show --pointer prints text to paste yourself. show prints the full guide without installation.
+
+Usage: agent-cli skill
+
+Flags:
+  -h, --help     Print help
+  -v, --verbose  Print diagnostic details to stderr
+
+Examples:
+  agent-cli skill show
+  agent-cli skill install codex
+  agent-cli skill install --all --dry-run
+  agent-cli skill status
+  agent-cli skill remove codex
+
+Environment: CLAUDE_CONFIG_DIR (Claude user skill location only); no credentials or CLI config are read
+Exit codes: 0 ok · 1 filesystem failure or conflict · 2 usage error or unknown agent

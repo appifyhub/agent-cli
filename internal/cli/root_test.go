@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,7 +9,9 @@ import (
 
 	agentcli "github.com/appifyhub/agent-cli"
 	"github.com/appifyhub/agent-cli/internal/buildinfo"
+	"github.com/appifyhub/agent-cli/internal/cli"
 	"github.com/appifyhub/agent-cli/internal/testkit"
+	"github.com/appifyhub/agent-cli/internal/text"
 )
 
 func runOn(t *testing.T, goos string, args ...string) testkit.Result {
@@ -168,7 +171,7 @@ func TestUsageErrorsAreOneLine(t *testing.T) {
 }
 
 func TestCommandHelpGoldens(t *testing.T) {
-	for _, command := range []string{"completion", "env", "server", "help", "revoke-all", "status", "chats", "chats default", "notify", "unlock"} {
+	for _, command := range []string{"completion", "env", "server", "help", "revoke-all", "status", "chats", "chats default", "notify", "unlock", "skill", "skill show", "skill install", "skill status", "skill remove"} {
 		for _, c := range []struct{ goos, golden string }{{"darwin", "unix"}, {"linux", "unix"}, {"windows", "windows"}} {
 			path := strings.Fields(command)
 			forms := [][]string{append(append([]string{}, path...), "-h"), append(append([]string{}, path...), "--help"), append([]string{"help"}, path...)}
@@ -209,7 +212,7 @@ func TestEveryCommandHelpListsExamplesEnvironmentAndExitCodes(t *testing.T) {
 	if len(names) < 4 {
 		t.Fatalf("found only %v", names)
 	}
-	names = append(names, "chats default")
+	names = append(names, "chats default", "skill show", "skill install", "skill status", "skill remove")
 	for _, name := range names {
 		res := runOn(t, "linux", append([]string{"help"}, strings.Fields(name)...)...)
 		for _, want := range []string{"\nExamples:\n", "\nEnvironment: ", "\nExit codes: "} {
@@ -272,5 +275,308 @@ func TestChatsPlatformCompletionAndBuildNamedHelp(t *testing.T) {
 				t.Error("chats help embeds a hosted backend URL")
 			}
 		}
+	}
+}
+
+func skillTestDeps(t *testing.T) (cli.Deps, string, string) {
+	t.Helper()
+	root := t.TempDir()
+	home, cwd := filepath.Join(root, "home"), filepath.Join(root, "work", "nested")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	d := testkit.NewDeps(testkit.WithEnv(map[string]string{"THE_AGENT_CLI_TOKEN": "private-token-value", "THE_AGENT_CLI_PASSPHRASE": "private-passphrase-value", "THE_AGENT_CLI_HOME": filepath.Join(root, "cli-state")}))
+	d.UserHomeDir = func() (string, error) { return home, nil }
+	d.Getwd = func() (string, error) { return cwd, nil }
+	return d, home, cwd
+}
+
+func TestSkillGuideAndPointer(t *testing.T) {
+	for _, goos := range []string{"linux", "windows"} {
+		d, home, cwd := skillTestDeps(t)
+		d.GOOS = goos
+		d.Text = text.MustNew(goos)
+		for _, args := range [][]string{{"skill", "show"}, {"skill", "show", "--pointer"}} {
+			got := testkit.Run(t, d, args...)
+			if got.Code != 0 || got.Stderr != "" || !strings.Contains(got.Stdout, "agent-cli") {
+				t.Fatal(got)
+			}
+			testkit.AssertNoSecret(t, "private-token-value", got.Stdout, got.Stderr)
+			testkit.AssertNoSecret(t, "private-passphrase-value", got.Stdout, got.Stderr)
+			if len(args) == 3 {
+				if strings.Count(strings.TrimSpace(got.Stdout), "\n") >= 6 || !strings.Contains(got.Stdout, "agent-cli skill show") {
+					t.Fatal(got)
+				}
+			} else {
+				suffix := "unix"
+				if goos == "windows" {
+					suffix = "windows"
+				}
+				testkit.Golden(t, "skill_guide_"+suffix, got.Stdout)
+				if strings.Count(got.Stdout, "\n") > 200 {
+					t.Fatal("guide exceeds limit")
+				}
+			}
+		}
+		if _, err := os.Stat(home); !os.IsNotExist(err) {
+			t.Fatal("show created user home", err)
+		}
+		if entries, err := os.ReadDir(cwd); err != nil || len(entries) != 0 {
+			t.Fatal(entries, err)
+		}
+	}
+	d, _, _ := skillTestDeps(t)
+	d.Build = buildinfo.Resolve(buildinfo.Info{Name: "abot-dev"})
+	got := testkit.Run(t, d, "skill", "show")
+	if strings.Contains(got.Stdout, "agent-cli") || !strings.Contains(got.Stdout, "abot-dev notify") {
+		t.Fatal(got)
+	}
+	d.UserHomeDir = func() (string, error) { panic("show must not resolve home") }
+	d.Getwd = func() (string, error) { panic("show must not resolve cwd") }
+	d.Getenv = func(string) string { panic("show must not read environment") }
+	if got := testkit.Run(t, d, "skill", "show"); got.Code != 0 {
+		t.Fatal(got)
+	}
+}
+
+func TestSkillGroupAndValidation(t *testing.T) {
+	if a, b := runOn(t, "linux", "skill"), runOn(t, "linux", "skill", "--help"); a != b || a.Code != 0 {
+		t.Fatal(a, b)
+	}
+	for _, args := range [][]string{{"skill", "nope"}, {"skill", "setup"}, {"skill", "install"}, {"skill", "install", "codex", "claude"}, {"skill", "install", "devin"}, {"skill", "status", "--agent", "devin"}, {"skill", "remove", "codex", "--agent", "nope"}, {"skill", "install", "codex", "--user", "--project"}, {"skill", "status", "--user", "--project"}, {"skill", "remove", "--user", "--project"}} {
+		d, home, cwd := skillTestDeps(t)
+		got := testkit.Run(t, d, args...)
+		if got.Code != 2 || got.Stdout != "" || !strings.HasPrefix(got.Stderr, "error: ") || strings.Count(got.Stderr, "\n") != 1 {
+			t.Fatal(args, got)
+		}
+		if _, err := os.Stat(home); !os.IsNotExist(err) {
+			t.Fatal("validation created home", err)
+		}
+		if entries, err := os.ReadDir(cwd); err != nil || len(entries) != 0 {
+			t.Fatal("validation wrote files", entries, err)
+		}
+		if strings.Contains(got.Stderr, "unknown agent") {
+			for _, name := range []string{"claude", "codex", "opencode", "pi", "omp", "windsurf", "cursor", "gemini", "antigravity"} {
+				if !strings.Contains(got.Stderr, name) {
+					t.Fatal(got)
+				}
+			}
+		}
+	}
+}
+
+func TestSkillInstallStatusRemove(t *testing.T) {
+	for _, project := range []bool{false, true} {
+		d, home, cwd := skillTestDeps(t)
+		scope, root := "--user", home
+		if project {
+			scope, root = "--project", cwd
+		}
+		path := filepath.Join(root, ".agents", "skills", "agent-cli", "SKILL.md")
+		run := func(wantCode int, want string, args ...string) testkit.Result {
+			t.Helper()
+			got := testkit.Run(t, d, append([]string{"skill"}, args...)...)
+			if got.Code != wantCode || !strings.Contains(got.Stdout+got.Stderr, want) {
+				t.Fatal(args, got)
+			}
+			testkit.AssertNoSecret(t, "private-token-value", got.Stdout, got.Stderr)
+			return got
+		}
+		run(0, "missing", "status", scope, "--agent", "codex")
+		run(0, "would install", "install", "codex", scope, "--dry-run")
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("dry run wrote", err)
+		}
+		run(0, "installed", "install", "codex", scope)
+		original, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		testkit.AssertNoSecret(t, "private-token-value", string(original))
+		testkit.AssertNoSecret(t, "private-passphrase-value", string(original))
+		run(0, "unchanged", "install", "codex", scope)
+		run(0, "current", "status", scope, "--agent", "codex", "--agent", "cursor")
+		edited := append(append([]byte(nil), original...), []byte("edited\n")...)
+		if err := os.WriteFile(path, edited, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run(0, "outdated", "status", scope, "--agent", "codex")
+		run(0, "updated", "install", "codex", scope)
+		if err := os.WriteFile(path, []byte("foreign skill\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run(1, "conflict", "install", "codex", scope)
+		run(0, "foreign", "remove", "codex", scope)
+		raw, err := os.ReadFile(path)
+		if err != nil || string(raw) != "foreign skill\n" {
+			t.Fatal("foreign changed", err)
+		}
+		run(0, "updated", "install", "codex", scope, "--force")
+		run(0, "would remove", "remove", "codex", scope, "--dry-run")
+		if _, err := os.Stat(path); err != nil {
+			t.Fatal(err)
+		}
+		removed := run(0, "removed", "remove", scope, "--all")
+		if !strings.Contains(removed.Stdout, "Codex: removed") || !strings.Contains(removed.Stdout, "Cursor: removed") {
+			t.Fatal("shared path operated twice", removed)
+		}
+		if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Dir(filepath.Dir(path))); err != nil {
+			t.Fatal("parent removed", err)
+		}
+	}
+}
+
+func TestSkillNativeLocationsAndIsolation(t *testing.T) {
+	d, home, cwd := skillTestDeps(t)
+	override := filepath.Join(t.TempDir(), "claude-config")
+	d.Getenv = func(k string) string {
+		if k == "CLAUDE_CONFIG_DIR" {
+			return override
+		}
+		return ""
+	}
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(cwd), ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range []string{"claude", "codex", "opencode", "pi", "omp", "windsurf", "cursor", "gemini", "antigravity"} {
+		for _, project := range []bool{false, true} {
+			args := []string{"skill", "install", a}
+			root := home
+			if project {
+				root = cwd
+				args = append(args, "--project")
+			}
+			want := filepath.Join(root, ".agents", "skills", "agent-cli", "SKILL.md")
+			if a == "claude" {
+				if project {
+					want = filepath.Join(cwd, ".claude", "skills", "agent-cli", "SKILL.md")
+				} else {
+					want = filepath.Join(override, "skills", "agent-cli", "SKILL.md")
+				}
+			}
+			if a == "antigravity" && !project {
+				want = filepath.Join(home, ".gemini", "config", "skills", "agent-cli", "SKILL.md")
+			}
+			if got := testkit.Run(t, d, args...); got.Code != 0 {
+				t.Fatal(got)
+			}
+			if _, err := os.Stat(want); err != nil {
+				t.Fatal(a, project, want, err)
+			}
+		}
+	}
+	other := d
+	other.Build = buildinfo.Resolve(buildinfo.Info{Name: "another-cli"})
+	if got := testkit.Run(t, other, "skill", "install", "codex"); got.Code != 0 {
+		t.Fatal(got)
+	}
+	if got := testkit.Run(t, d, "skill", "remove", "--project", "--all"); got.Code != 0 {
+		t.Fatal(got)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "agent-cli", "SKILL.md")); err != nil {
+		t.Fatal("project removal affected user", err)
+	}
+	if got := testkit.Run(t, d, "skill", "remove", "--all"); got.Code != 0 {
+		t.Fatal(got)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "another-cli", "SKILL.md")); err != nil {
+		t.Fatal("other build removed", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(cwd), ".agents")); !os.IsNotExist(err) {
+		t.Fatal("used Git root instead of cwd", err)
+	}
+}
+
+func TestSkillUnreadableAndWriteFailure(t *testing.T) {
+	d, home, _ := skillTestDeps(t)
+	path := filepath.Join(home, ".agents", "skills", "agent-cli", "SKILL.md")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	got := testkit.Run(t, d, "skill", "status", "--agent", "codex")
+	if got.Code != 0 || got.Stderr != "" || !strings.Contains(got.Stdout, "unreadable") {
+		t.Fatal(got)
+	}
+	got = testkit.Run(t, d, "skill", "install", "codex")
+	if got.Code != 1 || !strings.HasPrefix(got.Stderr, "error: ") || !strings.Contains(got.Stderr, "agent-cli") {
+		t.Fatal(got)
+	}
+	d.Getwd = func() (string, error) { return "", errors.New("cwd unavailable") }
+	if got := testkit.Run(t, d, "skill", "install", "codex", "--project"); got.Code != 1 {
+		t.Fatal(got)
+	}
+}
+
+func TestSkillCompletion(t *testing.T) {
+	for _, args := range [][]string{{"__complete", "skill", "install", ""}, {"__complete", "skill", "status", "--agent", ""}, {"__complete", "skill", "remove", ""}} {
+		got := runOn(t, "linux", args...)
+		if got.Code != 0 {
+			t.Fatal(got)
+		}
+		for _, name := range []string{"claude", "codex", "opencode", "pi", "omp", "windsurf", "cursor", "gemini", "antigravity"} {
+			if !strings.Contains(got.Stdout, name+"\n") {
+				t.Fatal(args, got)
+			}
+		}
+	}
+}
+
+func TestSkillReportGoldens(t *testing.T) {
+	for _, goos := range []string{"linux", "windows"} {
+		d, _, _ := skillTestDeps(t)
+		d.GOOS = goos
+		d.Text = text.MustNew(goos)
+		var output strings.Builder
+		for _, args := range [][]string{{"install", "codex"}, {"status", "--agent", "codex"}, {"remove", "codex"}} {
+			got := testkit.Run(t, d, append([]string{"skill"}, args...)...)
+			if got.Code != 0 || got.Stderr != "" {
+				t.Fatal(got)
+			}
+			output.WriteString(got.Stdout)
+		}
+		testkit.Golden(t, "skill_report_"+goos, output.String())
+	}
+}
+
+func TestSkillExplicitAll(t *testing.T) {
+	d, home, _ := skillTestDeps(t)
+	for _, args := range [][]string{{"remove"}, {"install", "codex", "--all"}, {"remove", "codex", "--all"}, {"remove", "codex", "cursor"}, {"remove", "--all=false"}} {
+		got := testkit.Run(t, d, append([]string{"skill"}, args...)...)
+		if got.Code != 2 || got.Stdout != "" {
+			t.Fatal(args, got)
+		}
+	}
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatal("invalid selection changed home", err)
+	}
+	got := testkit.Run(t, d, "skill", "install", "--all", "--dry-run")
+	if got.Code != 0 || strings.Count(got.Stdout, "would install") != 9 {
+		t.Fatal(got)
+	}
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatal("dry run created home", err)
+	}
+	got = testkit.Run(t, d, "skill", "install", "--all")
+	if got.Code != 0 || strings.Count(got.Stdout, "installed") != 9 {
+		t.Fatal(got)
+	}
+	got = testkit.Run(t, d, "skill", "status")
+	if got.Code != 0 || strings.Count(got.Stdout, "current") != 9 {
+		t.Fatal(got)
+	}
+	got = testkit.Run(t, d, "skill", "remove", "--all", "--dry-run")
+	if got.Code != 0 || strings.Count(got.Stdout, "would remove") != 9 {
+		t.Fatal(got)
+	}
+	got = testkit.Run(t, d, "skill", "remove", "--all")
+	if got.Code != 0 || strings.Count(got.Stdout, "removed") != 9 {
+		t.Fatal(got)
+	}
+	got = testkit.Run(t, d, "skill", "status")
+	if got.Code != 0 || strings.Count(got.Stdout, "missing") != 9 {
+		t.Fatal(got)
 	}
 }

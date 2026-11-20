@@ -1,0 +1,22 @@
+Remove owned skills only; foreign skills and unrelated files are left alone. Empty build-named directories are removed, but parent directories and sibling skills remain.
+Select one positional agent or --all for every supported location. Do not combine an agent with --all. Bare remove changes nothing and reports a usage error.
+--user is the default: Claude Code uses $CLAUDE_CONFIG_DIR/skills or ~/.claude/skills, Antigravity ~/.gemini/config/skills, and all others ~/.agents/skills.
+--project uses .claude/skills for Claude Code and .agents/skills otherwise, under the exact cwd, not a Git root, ignoring user overrides. The scope flags are mutually exclusive. --dry-run changes nothing.
+Shared locations are removed once: removing one makes the skill unavailable to every agent reading that same path. No hooks, settings or instruction files are edited.
+
+Usage: agent-cli skill remove [agent]
+
+Flags:
+      --all      Select every supported agent (shared directories are handled once)
+      --dry-run  Report planned actions without changing files
+      --project  Use the native agent skill path under the exact current directory
+      --user     Use the agent's user skill location (default)
+  -h, --help     Print help
+  -v, --verbose  Print diagnostic details to stderr
+
+Examples:
+  agent-cli skill remove codex
+  agent-cli skill remove --all --project --dry-run
+
+Environment: CLAUDE_CONFIG_DIR (Claude user scope only); system user home for --user
+Exit codes: 0 removed, missing or foreign · 1 filesystem or output failure · 2 usage error or unknown agent

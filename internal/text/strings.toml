@@ -22,8 +22,8 @@ examples_label = "Examples:"
 [command.help]
 short = "Help for any command"
 long = "Print the help of a command: what it does, its usage, flags and examples, and the environment variables and exit codes that affect it."
-examples = """  {name} help env
-  {name} env --help"""
+examples = '''  {name} help env
+  {name} env --help'''
 environment = "Environment: none"
 exit_codes = "Exit codes: 0 ok · 2 unknown help topic"
 
@@ -32,10 +32,10 @@ short = "Show the environment variables the CLI reads"
 long = '''Print every environment variable the CLI reads, what it controls, whether it is set and the value in effect.
 A variable that is not set shows the default in effect, which can come from the config file or the build.
 Secrets are reported as set, never shown. Works offline and changes nothing.'''
-examples_unix = """  {name} env
-  THE_AGENT_CLI_API_URL=https://agent.example.com {name} env"""
-examples_windows = """  {name} env
-  $env:THE_AGENT_CLI_API_URL = "https://agent.example.com"; {name} env"""
+examples_unix = '''  {name} env
+  THE_AGENT_CLI_API_URL="https://agent.example.com" {name} env'''
+examples_windows = '''  {name} env
+  $env:THE_AGENT_CLI_API_URL = "https://agent.example.com"; {name} env'''
 environment = "Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM, NO_COLOR"
 exit_codes = "Exit codes: 0 ok · 1 failure (home directory or config file unusable) · 2 usage error"
 
@@ -43,10 +43,10 @@ exit_codes = "Exit codes: 0 ok · 1 failure (home directory or config file unusa
 short = "Show the health and version of the backend"
 long = '''Ask the backend whether it is up and print what it reports about itself: its address, status and version, any other detail it shares, and how long it took to answer.
 Needs no connection, token or passphrase, and changes nothing. Use it to tell a server problem from a local one.'''
-examples_unix = """  {name} server
-  THE_AGENT_CLI_API_URL=https://agent.example.com {name} server"""
-examples_windows = """  {name} server
-  $env:THE_AGENT_CLI_API_URL = "https://agent.example.com"; {name} server"""
+examples_unix = '''  {name} server
+  THE_AGENT_CLI_API_URL="https://agent.example.com" {name} server'''
+examples_windows = '''  {name} server
+  $env:THE_AGENT_CLI_API_URL = "https://agent.example.com"; {name} server'''
 environment = "Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME"
 exit_codes = "Exit codes: 0 ok · 1 unhealthy or unreachable server · 2 usage error or invalid API URL · 6 rate limited"
 label_server = "Server"
@@ -62,9 +62,9 @@ not_agent = "the address {url} did not answer like the agent's server"
 short = "Generate shell completion scripts"
 long = "Generate the completion script for the given shell and print it to stdout."
 unsupported_shell = "unsupported shell \"{shell}\"; use bash, zsh, fish or powershell"
-examples_unix = """  eval "$({name} completion zsh)"
-  {name} completion bash > /etc/bash_completion.d/{name}"""
-examples_windows = """  {name} completion powershell | Out-String | Invoke-Expression"""
+examples_unix = '''  eval "$({name} completion zsh)"
+  {name} completion bash > "/etc/bash_completion.d/{name}"'''
+examples_windows = '''  {name} completion powershell | Out-String | Invoke-Expression'''
 environment = "Environment: none"
 exit_codes = "Exit codes: 0 ok · 2 usage error or unsupported shell"
 
@@ -160,13 +160,13 @@ On macOS the system keychain is accessed through /usr/bin/security without acces
 Local state lives in the home directory selected by THE_AGENT_CLI_HOME, otherwise ~/.<command name>. config.toml holds device identity and connection metadata, never secrets; file modes store the token in credentials. Files are owner-readable and writable only where supported.
 --ttl is forwarded to the server, for example 90m, 3mo or 1y; the server decides what is valid. Reconnecting replaces the token; changing users clears the saved default target.
 A successful connection prints its storage location and expiry.'''
-examples_unix = '''  {name} connect <KEY>
-  {name} connect <KEY> --ttl 3mo
-  {name} connect <KEY> --store passphrase
+examples_unix = '''  {name} connect "<KEY>"
+  {name} connect "<KEY>" --ttl 3mo
+  {name} connect "<KEY>" --store passphrase
   eval "$({name} unlock)"'''
-examples_windows = '''  {name} connect <KEY>
-  {name} connect <KEY> --ttl 3mo
-  {name} connect <KEY> --store passphrase
+examples_windows = '''  {name} connect "<KEY>"
+  {name} connect "<KEY>" --ttl 3mo
+  {name} connect "<KEY>" --store passphrase
   {name} unlock --shell pwsh | Invoke-Expression'''
 environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_PASSPHRASE, NO_COLOR"
 exit_codes = "Exit codes: 0 ok · 1 connection or storage failure · 2 usage or validation error · 6 rate limited"
@@ -216,8 +216,8 @@ short = "Revoke access for all CLIs on all your machines"
 long = '''Revoke every CLI token for your account, then remove the token stored on this machine. The device identity, backend address and default target are kept.
 Confirmation is requested before unlocking a passphrase-protected token. Use --yes in scripts. THE_AGENT_CLI_TOKEN overrides the stored token; successful revocation removes the stored token too, but rejection of an environment token leaves stored credentials untouched.
 You can also manage CLI access in the agent's chat settings.'''
-examples = """  {name} revoke-all
-  {name} revoke-all --yes"""
+examples = '''  {name} revoke-all
+  {name} revoke-all --yes'''
 environment = "Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE"
 exit_codes = "Exit codes: 0 revoked or already revoked · 1 aborted or request/cleanup failure · 2 usage error or confirmation required · 3 not connected or locked · 6 rate limited"
 flag_yes = "Skip confirmation and revoke all CLI access"
@@ -244,7 +244,7 @@ Connected as Example User (workstation)
   Backend: {backend}
 
 Use {name} connect <KEY> to connect this machine.'''
-examples = "  {name} status"
+examples = '''  {name} status'''
 environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM"
 exit_codes = "Exit codes: 0 locally connected · 1 local state unusable · 2 usage or default validation error · 3 not connected, locked, expired or invalid environment token"
 
@@ -282,7 +282,7 @@ Example table:
 {sample}'''
 examples = '''  {name} chats
   {name} chats default
-  {name} chats default --set 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7
+  {name} chats default --set "3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7"
   {name} chats default --platform whatsapp
   {name} chats default --clear'''
 environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM"
@@ -297,7 +297,7 @@ To change the stored default, choose one of --set <chat-id>, --platform telegram
 Only the default target is changed; device identity, backend address and connection metadata are preserved. State lives under THE_AGENT_CLI_HOME, otherwise ~/.<command name>.
 THE_AGENT_CLI_DEFAULT_CHAT wins over THE_AGENT_CLI_DEFAULT_PLATFORM, then the stored default. Environment defaults are labelled with their variable name. Changes update the stored default, not environment variables.'''
 examples = '''  {name} chats default
-  {name} chats default --set 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7
+  {name} chats default --set "3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7"
   {name} chats default --platform telegram
   {name} chats default --platform WhatsApp
   {name} chats default --clear'''
@@ -348,7 +348,7 @@ Success is silent unless --verbose is set.
 Notifications are never retried automatically.
 PowerShell 7 pipes UTF-8 by default. In Windows PowerShell 5.1, set $OutputEncoding = [System.Text.UTF8Encoding]::new() before piping non-ASCII text.'''
 examples = '''  {name} notify "Build finished"
-  {name} notify --chat <chat-id> "Dinner's ready"
+  {name} notify --chat "<chat-id>" "Dinner's ready"
   {name} notify --platform whatsapp "Deploy done" -v
   echo "Backup finished" | {name} notify'''
 environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM"
@@ -382,7 +382,7 @@ THE_AGENT_CLI_PASSPHRASE supplies the passphrase, otherwise a terminal prompt is
 The exported token is inherited by child processes, not other terminals. Run Remove-Item Env:THE_AGENT_CLI_TOKEN to remove it. Avoid running unlock directly on a terminal or saving its output: the assignment contains your token and may remain in scrollback or files.'''
 examples_unix = '''  eval "$({name} unlock)"
   {name} unlock --shell fish | source'''
-examples_windows = "  {name} unlock --shell pwsh | Invoke-Expression"
+examples_windows = '''  {name} unlock --shell pwsh | Invoke-Expression'''
 environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE"
 exit_codes = "Exit codes: 0 ok · 1 local failure · 2 usage error · 3 not connected or locked"
 flag_shell = "Assignment syntax: sh, bash, zsh, fish, pwsh, powershell"
@@ -394,3 +394,106 @@ nothing = "Nothing to unlock: your token is not passphrase-protected."
 success = "✓ Unlocked for this terminal session"
 hint_unix = 'To apply it to this terminal session, run: eval "$({name} unlock)"'
 hint_windows = "To apply it to this terminal session, run: {name} unlock --shell pwsh | Invoke-Expression"
+
+
+[command.skill]
+short = "Teach AI coding agents to use this CLI"
+long = '''Teach coding agents to use {name}. Commands: status, install [agent], remove [agent], show.
+Install and remove require one agent or explicit --all. Agents need not be installed. No hooks, settings changes or instruction-file edits.
+Supported agents: claude, codex, opencode, pi, omp, windsurf, cursor, gemini, antigravity.
+User scope is the default (--user). --project uses the native agent path under the exact current directory, never a Git root.
+User paths: Claude Code uses $CLAUDE_CONFIG_DIR/skills or ~/.claude/skills; Antigravity uses ~/.gemini/config/skills; all others use ~/.agents/skills.
+Project paths: Claude Code uses .claude/skills; all others use .agents/skills. Each path ends in the build's command name.
+Agents sharing a directory share one skill: removing it affects every agent reading that directory.
+For an agent without skill support, show --pointer prints text to paste yourself. show prints the full guide without installation.'''
+examples = '''  {name} skill show
+  {name} skill install codex
+  {name} skill install --all --dry-run
+  {name} skill status
+  {name} skill remove codex'''
+environment = "Environment: CLAUDE_CONFIG_DIR (Claude user skill location only); no credentials or CLI config are read"
+exit_codes = "Exit codes: 0 ok · 1 filesystem failure or conflict · 2 usage error or unknown agent"
+
+[command.skill_show]
+short = "Print the shared guide for coding agents"
+long = "Print the guide to stdout without installation, files, credentials or network access. --pointer prints at most six lines for you to paste into another agent's instruction file; this command never edits that file."
+examples = '''  {name} skill show
+  {name} skill show --pointer'''
+environment = "Environment: none"
+exit_codes = "Exit codes: 0 ok · 1 output failure · 2 usage error"
+
+[command.skill_install]
+short = "Install pointer skills for one agent or all agents"
+long = '''Install a shared-guide pointer for one named agent, or use --all for every supported agent. Do not combine an agent with --all. Agents need not be installed.
+--user is the default: Claude Code uses $CLAUDE_CONFIG_DIR/skills or ~/.claude/skills, Antigravity ~/.gemini/config/skills, and all other agents ~/.agents/skills.
+--project uses .claude/skills for Claude Code or .agents/skills for every other agent, under the exact cwd even outside Git. User overrides do not affect project paths. Each skill directory is named {name}.
+The two scope flags are mutually exclusive. Current stubs are unchanged; older or edited owned stubs are updated. Foreign skills conflict unless --force replaces them. --dry-run writes nothing.
+No hooks, settings changes or instruction-file edits. See skill show --pointer for other agents.'''
+examples = '''  {name} skill install codex
+  {name} skill install claude --user
+  {name} skill install antigravity --project --dry-run'''
+environment = "Environment: CLAUDE_CONFIG_DIR (Claude user scope only); system user home for --user"
+exit_codes = "Exit codes: 0 installed, updated or unchanged · 1 filesystem failure or conflict · 2 usage error or unknown agent"
+
+[command.skill_status]
+short = "Inspect pointer skills without changing files"
+long = '''Report current, outdated, missing, foreign or unreadable skills. --agent optionally filters claude, codex, opencode, pi, omp, windsurf, cursor, gemini or antigravity; repeat it to select several.
+--user is the default. Claude Code uses $CLAUDE_CONFIG_DIR/skills or ~/.claude/skills; Antigravity uses ~/.gemini/config/skills; all other agents use ~/.agents/skills.
+--project uses .claude/skills for Claude Code and .agents/skills otherwise, under the exact cwd without Git-root lookup or user overrides. The scope flags are mutually exclusive.
+Shared paths reflect shared state, not separate copies. No hooks, settings, instruction files, credentials or network access; missing directories are not created.'''
+examples = '''  {name} skill status
+  {name} skill status --project --agent claude --agent codex'''
+environment = "Environment: CLAUDE_CONFIG_DIR (Claude user scope only); system user home for --user"
+exit_codes = "Exit codes: 0 reported, including missing or unreadable skills · 1 location or output failure · 2 usage error or unknown agent"
+
+[command.skill_remove]
+short = "Remove owned pointer skills"
+long = '''Remove owned skills only; foreign skills and unrelated files are left alone. Empty build-named directories are removed, but parent directories and sibling skills remain.
+Select one positional agent or --all for every supported location. Do not combine an agent with --all. Bare remove changes nothing and reports a usage error.
+--user is the default: Claude Code uses $CLAUDE_CONFIG_DIR/skills or ~/.claude/skills, Antigravity ~/.gemini/config/skills, and all others ~/.agents/skills.
+--project uses .claude/skills for Claude Code and .agents/skills otherwise, under the exact cwd, not a Git root, ignoring user overrides. The scope flags are mutually exclusive. --dry-run changes nothing.
+Shared locations are removed once: removing one makes the skill unavailable to every agent reading that same path. No hooks, settings or instruction files are edited.'''
+examples = '''  {name} skill remove codex
+  {name} skill remove --all --project --dry-run'''
+environment = "Environment: CLAUDE_CONFIG_DIR (Claude user scope only); system user home for --user"
+exit_codes = "Exit codes: 0 removed, missing or foreign · 1 filesystem or output failure · 2 usage error or unknown agent"
+
+[skill]
+pointer = '''Run {name} skill show and follow its guide before using {name} to notify the user.
+If that command fails, run {name} --help.
+'''
+unlock_unix = 'eval "$({name} unlock)"'
+unlock_windows = "{name} unlock --shell pwsh | Invoke-Expression"
+stub_description = "Use {name} to notify the user through their agent when requested or when a long task finishes or needs attention."
+flag_pointer = "Print a short instruction for agents without skill support"
+flag_user = "Use the agent's user skill location (default)"
+flag_project = "Use the native agent skill path under the exact current directory"
+flag_agent = "Select an agent; repeat to select several (default: all)"
+flag_force = "Replace a foreign skill at this build's skill path"
+flag_dry_run = "Report planned actions without changing files"
+flag_all = "Select every supported agent (shared directories are handled once)"
+scope_conflict = "use either --user or --project, not both"
+selection_usage = "skill {operation} requires one agent or --all, not both"
+unknown_agent = 'unknown agent "{agent}"; supported agents: {agents}'
+location_error = "could not determine the selected skill location"
+io_error = "could not manage skill at {path}: {reason}"
+report = "{agent}: {result} — {path}"
+
+[skill.state]
+current = "current"
+outdated = "outdated"
+missing = "missing"
+foreign = "foreign"
+unreadable = "unreadable"
+
+[skill.action]
+installed = "installed"
+updated = "updated"
+unchanged = "unchanged"
+conflict = "conflict; use --force to replace"
+removed = "removed"
+missing = "missing"
+foreign = "foreign; left unchanged"
+would_install = "would install"
+would_update = "would update"
+would_remove = "would remove"

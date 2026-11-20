@@ -1,0 +1,24 @@
+Install a shared-guide pointer for one named agent, or use --all for every supported agent. Do not combine an agent with --all. Agents need not be installed.
+--user is the default: Claude Code uses $CLAUDE_CONFIG_DIR/skills or ~/.claude/skills, Antigravity ~/.gemini/config/skills, and all other agents ~/.agents/skills.
+--project uses .claude/skills for Claude Code or .agents/skills for every other agent, under the exact cwd even outside Git. User overrides do not affect project paths. Each skill directory is named agent-cli.
+The two scope flags are mutually exclusive. Current stubs are unchanged; older or edited owned stubs are updated. Foreign skills conflict unless --force replaces them. --dry-run writes nothing.
+No hooks, settings changes or instruction-file edits. See skill show --pointer for other agents.
+
+Usage: agent-cli skill install [agent]
+
+Flags:
+      --all      Select every supported agent (shared directories are handled once)
+      --dry-run  Report planned actions without changing files
+      --force    Replace a foreign skill at this build's skill path
+      --project  Use the native agent skill path under the exact current directory
+      --user     Use the agent's user skill location (default)
+  -h, --help     Print help
+  -v, --verbose  Print diagnostic details to stderr
+
+Examples:
+  agent-cli skill install codex
+  agent-cli skill install claude --user
+  agent-cli skill install antigravity --project --dry-run
+
+Environment: CLAUDE_CONFIG_DIR (Claude user scope only); system user home for --user
+Exit codes: 0 installed, updated or unchanged · 1 filesystem failure or conflict · 2 usage error or unknown agent

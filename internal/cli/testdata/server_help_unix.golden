@@ -9,7 +9,7 @@ Flags:
 
 Examples:
   agent-cli server
-  THE_AGENT_CLI_API_URL=https://agent.example.com agent-cli server
+  THE_AGENT_CLI_API_URL="https://agent.example.com" agent-cli server
 
 Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME
 Exit codes: 0 ok · 1 unhealthy or unreachable server · 2 usage error or invalid API URL · 6 rate limited

@@ -13,6 +13,12 @@ import (
 //go:embed strings.toml
 var catalogFile []byte
 
+//go:embed skill.md
+var guideFile string
+
+//go:embed skill-stub.md
+var stubFile string
+
 // Catalog resolves keys to rendered text for one operating system.
 type Catalog struct {
 	goos    string
@@ -25,6 +31,8 @@ func New(goos string) (*Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
+	entries["skill.guide"] = guideFile
+	entries["skill.stub"] = stubFile
 	return &Catalog{goos: goos, entries: entries}, nil
 }
 

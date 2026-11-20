@@ -18,6 +18,7 @@ import (
 type Deps struct {
 	Getenv      func(string) string
 	UserHomeDir func() (string, error)
+	Getwd       func() (string, error)
 	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer

@@ -1,0 +1,15 @@
+Print the guide to stdout without installation, files, credentials or network access. --pointer prints at most six lines for you to paste into another agent's instruction file; this command never edits that file.
+
+Usage: agent-cli skill show
+
+Flags:
+      --pointer  Print a short instruction for agents without skill support
+  -h, --help     Print help
+  -v, --verbose  Print diagnostic details to stderr
+
+Examples:
+  agent-cli skill show
+  agent-cli skill show --pointer
+
+Environment: none
+Exit codes: 0 ok · 1 output failure · 2 usage error

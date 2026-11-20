@@ -15,9 +15,9 @@ Flags:
   -v, --verbose         Print diagnostic details to stderr
 
 Examples:
-  agent-cli connect <KEY>
-  agent-cli connect <KEY> --ttl 3mo
-  agent-cli connect <KEY> --store passphrase
+  agent-cli connect "<KEY>"
+  agent-cli connect "<KEY>" --ttl 3mo
+  agent-cli connect "<KEY>" --store passphrase
   eval "$(agent-cli unlock)"
 
 Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_PASSPHRASE, NO_COLOR

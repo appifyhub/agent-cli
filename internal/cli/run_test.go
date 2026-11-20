@@ -165,3 +165,35 @@ func TestShellAssignmentEscaping(t *testing.T) {
 		}
 	}
 }
+
+func TestSkillGuideCoversCommandTreeAndExitCodes(t *testing.T) {
+	d, _, _ := testDeps()
+	root, state := newRoot(d)
+	guide := d.Text.T("skill.guide", "name", d.Build.Name, "unlock", d.Text.T("skill.unlock", "name", d.Build.Name))
+	var walk func(*cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		if cmd.Name() == "skill" {
+			return
+		}
+		if cmd != root && cmd.Name() != "completion" && cmd.Name() != "help" && !strings.Contains(guide, cmd.CommandPath()) {
+			t.Errorf("guide missing %s", cmd.CommandPath())
+		}
+		for _, child := range cmd.Commands() {
+			walk(child)
+		}
+	}
+	walk(root)
+	linux := state.skillStub()
+	state.deps.Text = text.MustNew("windows")
+	if !bytes.Equal(linux, state.skillStub()) {
+		t.Fatal("stub differs by OS")
+	}
+	description := state.deps.Text.T("skill.stub_description", "name", d.Build.Name)
+	if len([]rune(description)) > 300 || strings.ContainsAny(description, "<>") {
+		t.Fatal(description)
+	}
+	windows := state.deps.Text.T("skill.guide", "name", d.Build.Name, "unlock", state.deps.Text.T("skill.unlock", "name", d.Build.Name))
+	if strings.ReplaceAll(windows, state.deps.Text.T("skill.unlock", "name", d.Build.Name), d.Text.T("skill.unlock", "name", d.Build.Name)) != guide {
+		t.Fatal("guide differs beyond shell instruction")
+	}
+}

@@ -29,6 +29,7 @@ func NewDeps(opts ...Option) cli.Deps {
 	deps := cli.Deps{
 		Getenv:           func(string) string { return "" },
 		UserHomeDir:      func() (string, error) { return "/home/morpheus", nil },
+		Getwd:            func() (string, error) { return "/work/project", nil },
 		Stdin:            strings.NewReader(""),
 		Term:             &FakeTerm{},
 		Text:             text.MustNew("linux"),

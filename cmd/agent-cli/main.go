@@ -33,6 +33,7 @@ func run() int {
 	deps := cli.Deps{
 		Getenv:      os.Getenv,
 		UserHomeDir: os.UserHomeDir,
+		Getwd:       os.Getwd,
 		Stdin:       os.Stdin,
 		Stdout:      os.Stdout,
 		Stderr:      os.Stderr,

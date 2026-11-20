@@ -1,0 +1,20 @@
+Report current, outdated, missing, foreign or unreadable skills. --agent optionally filters claude, codex, opencode, pi, omp, windsurf, cursor, gemini or antigravity; repeat it to select several.
+--user is the default. Claude Code uses $CLAUDE_CONFIG_DIR/skills or ~/.claude/skills; Antigravity uses ~/.gemini/config/skills; all other agents use ~/.agents/skills.
+--project uses .claude/skills for Claude Code and .agents/skills otherwise, under the exact cwd without Git-root lookup or user overrides. The scope flags are mutually exclusive.
+Shared paths reflect shared state, not separate copies. No hooks, settings, instruction files, credentials or network access; missing directories are not created.
+
+Usage: agent-cli skill status
+
+Flags:
+      --agent <stringArray>  Select an agent; repeat to select several (default: all)
+      --project              Use the native agent skill path under the exact current directory
+      --user                 Use the agent's user skill location (default)
+  -h, --help                 Print help
+  -v, --verbose              Print diagnostic details to stderr
+
+Examples:
+  agent-cli skill status
+  agent-cli skill status --project --agent claude --agent codex
+
+Environment: CLAUDE_CONFIG_DIR (Claude user scope only); system user home for --user
+Exit codes: 0 reported, including missing or unreadable skills · 1 location or output failure · 2 usage error or unknown agent

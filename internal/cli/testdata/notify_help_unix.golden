@@ -14,7 +14,7 @@ Flags:
 
 Examples:
   agent-cli notify "Build finished"
-  agent-cli notify --chat <chat-id> "Dinner's ready"
+  agent-cli notify --chat "<chat-id>" "Dinner's ready"
   agent-cli notify --platform whatsapp "Deploy done" -v
   echo "Backup finished" | agent-cli notify
 

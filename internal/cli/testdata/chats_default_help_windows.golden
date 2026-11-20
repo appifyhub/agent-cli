@@ -16,7 +16,7 @@ Flags:
 
 Examples:
   agent-cli chats default
-  agent-cli chats default --set 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7
+  agent-cli chats default --set "3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7"
   agent-cli chats default --platform telegram
   agent-cli chats default --platform WhatsApp
   agent-cli chats default --clear
