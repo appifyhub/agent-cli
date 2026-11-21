@@ -173,7 +173,7 @@ func NotifyOK(chat map[string]any, balance any) Response {
 	return JSON(http.StatusOK, body)
 }
 
-// HealthOK is the backend's health answer.
-func HealthOK(version string) Response {
-	return JSON(http.StatusOK, map[string]any{"status": "ok", "version": version})
+// StatusOK is a successful public status answer with an advertised CLI version.
+func StatusOK(version, cliVersion string) Response {
+	return JSON(http.StatusOK, map[string]string{"status": "ok", "service_version": version, "cli_version": cliVersion})
 }

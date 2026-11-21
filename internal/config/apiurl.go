@@ -31,7 +31,7 @@ func ValidateAPIURL(raw string) error {
 	switch {
 	case u.User != nil:
 		return reject(URLCredentials)
-	case u.RawQuery != "" || u.Fragment != "" || u.ForceQuery:
+	case u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "#"):
 		return reject(URLQueryOrFragment)
 	case u.Scheme == "https":
 		return nil

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -43,6 +44,41 @@ type Chat struct {
 type Delivery struct {
 	Chat          *Chat
 	CreditBalance *float64
+}
+
+// Status is the public backend and CLI version report. CLIVersion is empty when not advertised.
+type Status struct {
+	Status     string
+	Version    string
+	CLIVersion string
+}
+
+// Status reads the backend report without authenticating.
+func (c *Client) Status(ctx context.Context) (Status, error) {
+	status, body, err := c.call(ctx, http.MethodGet, "/cli/status", "", nil)
+	if err != nil {
+		var apiErr *Error
+		if errors.As(err, &apiErr) && apiErr.Kind >= KindInvalidConnectKey && apiErr.Kind <= KindDeviceRejected {
+			apiErr.Kind = KindFailure
+		}
+		return Status{}, err
+	}
+	if status != http.StatusOK {
+		return Status{}, unexpected(status)
+	}
+	var fields map[string]json.RawMessage
+	var result Status
+	var version *string
+	if json.Unmarshal(body, &fields) != nil ||
+		json.Unmarshal(fields["status"], &result.Status) != nil || result.Status == "" ||
+		json.Unmarshal(fields["service_version"], &version) != nil || version == nil {
+		return Status{}, unexpected(status)
+	}
+	if raw, ok := fields["cli_version"]; ok && json.Unmarshal(raw, &result.CLIVersion) != nil {
+		return Status{}, unexpected(status)
+	}
+	result.Version = *version
+	return result, nil
 }
 
 type connectBody struct {

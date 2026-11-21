@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io/fs"
 	"os"
@@ -49,21 +51,55 @@ func Path(home string) string {
 // Load reads the config file. A missing file is an empty File; a file that cannot be read, is not valid
 // TOML or holds an invalid device id is a *ReadError. Unknown keys are ignored.
 func Load(path string) (File, error) {
-	raw, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return File{}, nil
-	}
-	if err != nil {
-		return File{}, &ReadError{Path: path, Err: err}
-	}
 	var f File
-	if err := toml.Unmarshal(raw, &f); err != nil {
-		return File{}, &ReadError{Path: path, Err: err}
+	if err := load(path, &f); err != nil {
+		return File{}, err
 	}
 	if f.DeviceID != "" && !ValidDeviceID(f.DeviceID) {
 		return File{}, &ReadError{Path: path, Err: ErrInvalidDeviceID}
 	}
 	return f, nil
+}
+
+type statusCheck struct {
+	LastChecked time.Time `toml:"last_checked"`
+}
+
+// LoadStatusCheck reads the last online check for the selected backend, or zero if none is saved.
+func LoadStatusCheck(home, address string) (time.Time, error) {
+	var check statusCheck
+	err := load(statusCheckPath(home, address), &check)
+	return check.LastChecked, err
+}
+
+// SaveStatusCheck atomically records a completed online check without changing config.toml.
+func SaveStatusCheck(home, address string, checked time.Time) error {
+	if home == "" {
+		return ErrHomeUnavailable
+	}
+	if err := EnsureHome(home); err != nil {
+		return err
+	}
+	return save(statusCheckPath(home, address), statusCheck{LastChecked: checked.UTC()}, os.Rename)
+}
+
+func statusCheckPath(home, address string) string {
+	sum := sha256.Sum256([]byte(address))
+	return filepath.Join(home, "status-"+hex.EncodeToString(sum[:])+".toml")
+}
+
+func load(path string, value any) error {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return &ReadError{Path: path, Err: err}
+	}
+	if err := toml.Unmarshal(raw, value); err != nil {
+		return &ReadError{Path: path, Err: err}
+	}
+	return nil
 }
 
 // Save replaces the config file atomically: a temporary file in the same directory (mode 0600) is
@@ -72,8 +108,8 @@ func Save(path string, f File) error {
 	return save(path, f, os.Rename)
 }
 
-func save(path string, f File, rename func(oldPath, newPath string) error) (err error) {
-	body, err := toml.Marshal(f)
+func save(path string, value any, rename func(oldPath, newPath string) error) (err error) {
+	body, err := toml.Marshal(value)
 	if err != nil {
 		return &WriteError{Path: path, Err: err}
 	}
@@ -88,7 +124,10 @@ func save(path string, f File, rename func(oldPath, newPath string) error) (err 
 			err = &WriteError{Path: path, Err: err}
 		}
 	}()
-	if _, err = tmp.WriteString(header + string(body)); err != nil {
+	if _, err = tmp.WriteString(header); err != nil {
+		return err
+	}
+	if _, err = tmp.Write(body); err != nil {
 		return err
 	}
 	if err = tmp.Sync(); err != nil {

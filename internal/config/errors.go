@@ -27,7 +27,7 @@ func (e *HomeError) Unwrap() error { return e.Err }
 // Reason is the underlying cause without the path the operating system repeats in its messages.
 func (e *HomeError) Reason() string { return reason(e.Err) }
 
-// ReadError is a config file that exists but cannot be used.
+// ReadError is a local state file that exists but cannot be used.
 type ReadError struct {
 	Path string
 	Err  error
@@ -37,7 +37,7 @@ func (e *ReadError) Error() string  { return e.Path + ": " + e.Err.Error() }
 func (e *ReadError) Unwrap() error  { return e.Err }
 func (e *ReadError) Reason() string { return reason(e.Err) }
 
-// WriteError is a config file that could not be saved; the previous file is untouched.
+// WriteError is a local state file that could not be saved; the previous file is untouched.
 type WriteError struct {
 	Path string
 	Err  error

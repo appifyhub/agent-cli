@@ -212,11 +212,11 @@ func TestBinaries(t *testing.T) {
 				expires := started.AddDate(1, 0, 0).UTC().Truncate(time.Second)
 				for _, args := range [][]string{{"status", "--help"}, {"help", "status"}} {
 					r := run(t, bin, args...)
-					if r.code != 0 || !strings.Contains(r.stdout, "Usage: "+name+" status") || r.stderr != "" {
+					if r.code != 0 || !strings.Contains(r.stdout, "Usage: "+name+" status") || !strings.Contains(r.stdout, "--offline") || r.stderr != "" {
 						t.Errorf("status help: %+v", r)
 					}
 				}
-				if r := run(t, bin, "status"); r.code != 3 || r.stderr != "" || !strings.Contains(r.stdout, "`"+name+" connect <KEY>`") {
+				if r := run(t, bin, "status", "--offline"); r.code != 3 || r.stderr != "" || !strings.Contains(r.stdout, "`"+name+" connect <KEY>`") {
 					t.Errorf("fresh status: %+v", r)
 				}
 				for _, args := range [][]string{{"revoke-all", "--help"}, {"help", "revoke-all"}} {
@@ -274,8 +274,9 @@ func TestBinaries(t *testing.T) {
 				if err != nil || !persisted.Token.ExpiresAt.Equal(expires) || !persisted.Token.ExpiresAt.After(started.Add(300*24*time.Hour)) {
 					t.Errorf("persisted expiry does not match the future connection fixture: %v", err)
 				}
-				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "status", "-v")
-				if r.code != 0 || r.stderr != "" || !strings.Contains(r.stdout, "Connected as Tester (") || !strings.Contains(r.stdout, "(NOT encrypted)") || !strings.Contains(r.stdout, "  Backend: "+backend.URL+"\n") || strings.Contains(r.stdout, "test-token") {
+				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "status", "--offline", "-v")
+				if r.code != 0 || r.stderr != "" || !strings.Contains(r.stdout, "Connected as Tester (") || !strings.Contains(r.stdout, "(NOT encrypted)") ||
+					!strings.Contains(r.stdout, "  Backend           "+strings.TrimPrefix(backend.URL, "http://")+"\n") || strings.Contains(r.stdout, "test-token") {
 					t.Fatalf("offline status: %+v", r)
 				}
 				afterStatus, err := os.ReadFile(filepath.Join(home, "config.toml"))
@@ -297,7 +298,7 @@ func TestBinaries(t *testing.T) {
 				if err != nil || strings.Contains(string(metadata), "[token]") || !strings.Contains(string(metadata), "device_id") {
 					t.Error("incorrect metadata after revoke")
 				}
-				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "status")
+				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home}, "status", "--offline")
 				if r.code != 3 || !strings.HasPrefix(r.stdout, "Not connected.\n") || r.stderr != "" {
 					t.Fatalf("status after revoke: %+v", r)
 				}
@@ -339,6 +340,7 @@ func TestBinaries(t *testing.T) {
 					t.Fatalf("fresh default: %+v", got)
 				}
 				const chatID = "3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7"
+				const chatsResponse = `[{"chat_id":"` + chatID + `","platform":"telegram","title":"Morpheus","is_private":true},{"chat_id":"c2","platform":"matrix","title":null,"is_private":false}]`
 				secret := "header." + base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"neo"}`)) + ".signature"
 				var hits atomic.Int32
 				backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -348,7 +350,7 @@ func TestBinaries(t *testing.T) {
 						return
 					}
 					w.Header().Set("Content-Type", "application/json")
-					_, _ = io.WriteString(w, `[{"chat_id":"`+chatID+`","platform":"telegram","title":"Morpheus","is_private":true},{"chat_id":"c2","platform":"matrix","title":null,"is_private":false}]`)
+					_, _ = io.WriteString(w, chatsResponse)
 				}))
 				defer backend.Close()
 				home := filepath.Join(t.TempDir(), "state")
@@ -412,39 +414,75 @@ func TestBinaries(t *testing.T) {
 				}
 			})
 
-			t.Run("server", func(t *testing.T) {
-				var hits atomic.Int32
-				backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					hits.Add(1)
-					if r.URL.Path != "/health" || r.Header.Get("Authorization") != "" || !strings.HasPrefix(r.Header.Get("User-Agent"), name+"/") {
-						w.WriteHeader(http.StatusBadRequest)
-						return
-					}
-					_, _ = io.WriteString(w, `{"status":"ok","version":"9.9.9","region":"eu"}`)
-				}))
-				defer backend.Close()
+			t.Run("status", func(t *testing.T) {
+				advertised := ver
+				for _, tc := range []struct {
+					name   string
+					status int
+					token  string
+					exit   int
+				}{
+					{"disconnected with healthy backend", http.StatusOK, "", 3},
+					{"ready with older backend", http.StatusNotFound, "header." + base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"neo"}`)) + ".signature", 0},
+				} {
+					t.Run(tc.name, func(t *testing.T) {
+						var hits atomic.Int32
+						backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							hits.Add(1)
+							if r.Method != http.MethodGet || r.URL.RequestURI() != "/cli/status" || r.Header.Get("Authorization") != "" ||
+								r.ContentLength != 0 || !strings.HasPrefix(r.Header.Get("User-Agent"), name+"/") {
+								t.Errorf("expected one public GET /cli/status with the build's User-Agent; got %s %s", r.Method, r.URL)
+								w.WriteHeader(http.StatusBadRequest)
+								return
+							}
+							w.WriteHeader(tc.status)
+							_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service_version": "9.9.9", "cli_version": advertised})
+						}))
+						defer backend.Close()
 
-				home := filepath.Join(t.TempDir(), "home")
-				r := execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=" + backend.URL}, "server")
-				host := strings.TrimPrefix(backend.URL, "http://")
-				report := regexp.MustCompile(`^Server    ` + regexp.QuoteMeta(host) + `\nStatus    ok\nVersion   9\.9\.9\nregion    eu\nResponse  \d+ ms\n$`)
-				if r.code != 0 || r.stderr != "" || !report.MatchString(r.stdout) {
-					t.Errorf("code %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
-				}
-				if _, err := os.Stat(home); !errors.Is(err, os.ErrNotExist) {
-					t.Error("server created the home directory")
-				}
+						home := filepath.Join(t.TempDir(), "home")
+						env := []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=" + backend.URL, "THE_AGENT_CLI_TOKEN=" + tc.token}
+						const unchecked = "  Last checked      never checked\n"
+						offline := execute(t, bin, env, "status", "--offline", "-v")
+						if offline.code != tc.exit || offline.stderr != "" || hits.Load() != 0 ||
+							!strings.Contains(offline.stdout, "  Backend           "+strings.TrimPrefix(backend.URL, "http://")+"\n  Local CLI         "+ver+"\n") ||
+							!strings.HasSuffix(offline.stdout, unchecked) {
+							t.Fatalf("offline status: %+v (requests %d)", offline, hits.Load())
+						}
+						if _, err := os.Stat(home); !errors.Is(err, os.ErrNotExist) {
+							t.Errorf("offline status created the home directory: %v", err)
+						}
 
-				backend.Close()
-				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=" + backend.URL}, "server")
-				if r.code != 1 || r.stdout != "" || !strings.HasPrefix(r.stderr, "error: could not reach the server at "+backend.URL+": ") {
-					t.Errorf("closed port: code %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
-				}
-
-				before := hits.Load()
-				r = execute(t, bin, []string{"THE_AGENT_CLI_HOME=" + home, "THE_AGENT_CLI_API_URL=http://agent.example.test"}, "server")
-				if r.code != 2 || r.stdout != "" || !strings.HasPrefix(r.stderr, "error: invalid API URL") || hits.Load() != before {
-					t.Errorf("remote http: code %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+						online := execute(t, bin, env, "status")
+						if online.code != tc.exit || hits.Load() != 1 || online.stderr != "" ||
+							(tc.token != "" && strings.Contains(online.stdout, tc.token)) {
+							t.Errorf("online status: %+v (requests %d)", online, hits.Load())
+						}
+						local := strings.TrimSuffix(offline.stdout, unchecked)
+						remote, hasLocal := strings.CutPrefix(online.stdout, local)
+						if !hasLocal {
+							t.Fatalf("online stdout %q does not start with the local report %q", online.stdout, local)
+						}
+						const lastChecked = "  Last checked      "
+						report, checked, found := strings.Cut(remote, lastChecked)
+						if !found || !regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}\n$`).MatchString(checked) {
+							t.Fatalf("online status did not report completion: %q", remote)
+						}
+						if tc.status == http.StatusOK {
+							want := "\n  Backend status    ok\n  Backend version   9.9.9\n  Latest CLI        " + advertised +
+								"\n  CLI update        latest\n"
+							latency, found := strings.CutPrefix(report, want)
+							if !found || !regexp.MustCompile(`^  Response          \d+ ms\n$`).MatchString(latency) {
+								t.Errorf("unexpected backend and CLI report %q", report)
+							}
+						} else if report != "\n  Backend status    unavailable\n  Backend version   unavailable\n  Latest CLI        unavailable\n" {
+							t.Errorf("unexpected unavailable report %q", report)
+						}
+						saved := execute(t, bin, env, "status", "--offline", "-v")
+						if saved.code != tc.exit || saved.stdout != local+lastChecked+checked || saved.stderr != "" || hits.Load() != 1 {
+							t.Errorf("offline status after online check: %+v (requests %d)", saved, hits.Load())
+						}
+					})
 				}
 			})
 
@@ -454,6 +492,7 @@ func TestBinaries(t *testing.T) {
 					stderr string
 				}{
 					{[]string{"nope"}, "error: unknown command \"nope\" for \"" + name + "\"\n"},
+					{[]string{"server"}, "error: unknown command \"server\" for \"" + name + "\"\n"},
 					{[]string{"completion", "tcsh"}, "error: unsupported shell \"tcsh\"; use bash, zsh, fish or powershell\n"},
 					{[]string{"--nope"}, ""},
 					{[]string{"env", "extra"}, ""},
