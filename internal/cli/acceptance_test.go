@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/appifyhub/agent-cli/internal/config"
 	"github.com/appifyhub/agent-cli/internal/testkit"
@@ -44,6 +45,21 @@ func TestAcceptanceJourney(t *testing.T) {
 				}
 				return got
 			}
+			lastChecked := statusNever
+			checkStatus := func(code int, stdout string) {
+				t.Helper()
+				local := runOfflineStatus(t, r)
+				want := testkit.Result{Code: code, Stdout: stdout + lastChecked}
+				if local != want {
+					t.Fatalf("offline status = %#v; want %#v", local, want)
+				}
+				online := runHealthyStatus(t, r, r.backend, local)
+				lastChecked = "  Last checked      " + r.deps.Now().In(r.deps.Location).Format("2006-01-02 15:04") + "\n"
+				if !strings.HasSuffix(online.Stdout, lastChecked) {
+					t.Fatalf("online status = %+v; want completion %q", online, lastChecked)
+				}
+				testkit.AssertNoSecret(t, secret, local.Stdout, local.Stderr, online.Stdout, online.Stderr)
+			}
 			goldenOS := "unix"
 			storagePath := "~/.agent-cli/credentials"
 			unlockCommand := `eval "$(agent-cli unlock)"`
@@ -62,13 +78,14 @@ func TestAcceptanceJourney(t *testing.T) {
 				t.Fatal(err)
 			}
 			run(0, string(help), "", "--help")
-			notConnected := "Not connected.\nGet a connect key from the agent's chat settings, then run `agent-cli connect <KEY>`.\n"
-			run(3, notConnected, "", "status")
 			if r.backend.Count() != 0 {
-				t.Fatal("help or fresh status contacted the backend")
+				t.Fatal("help contacted the backend")
 			}
-			if _, err := os.Stat(r.home); !os.IsNotExist(err) {
-				t.Fatalf("read-only commands created CLI state: %v", err)
+			statusBackend := "  Backend           " + strings.TrimPrefix(r.backend.URL(), "http://") + "\n  Local CLI         " + r.deps.Build.Version + "\n"
+			notConnected := "Not connected.\nGet a connect key from the agent's chat settings, then run `agent-cli connect <KEY>`.\n" + statusBackend
+			checkStatus(3, notConnected)
+			if _, err := os.Stat(config.Path(r.home)); !os.IsNotExist(err) {
+				t.Fatalf("status created config.toml: %v", err)
 			}
 
 			var deviceID string
@@ -104,11 +121,8 @@ func TestAcceptanceJourney(t *testing.T) {
 				} else if r.keychain.Len() != 0 {
 					t.Fatal("reconnect kept the previous keychain secret")
 				}
-				before, hits, calls, prompts := statusSnapshot(t, r.home), r.backend.Count(), len(r.keychain.Calls), len(r.terminal.Prompts)
-				run(statusCode, "Connected as Morpheus (morpheus-mbp)\n  Device ID: "+deviceID+"\n  Token: "+statusLocation+", expires 2027-02-14 10:21 (in 3 months)\n  Default chat: none (latest chat is used)\n  Backend: "+r.backend.URL()+"\n"+statusHint, "", "status")
-				if statusSnapshot(t, r.home) != before || r.backend.Count() != hits || len(r.keychain.Calls) != calls || len(r.terminal.Prompts) != prompts {
-					t.Fatal("status changed state, accessed credentials, prompted or contacted the backend")
-				}
+				checkStatus(statusCode, "Connected as Morpheus (morpheus-mbp)\n  Device ID         "+deviceID+"\n  Token storage     "+statusLocation+"\n"+
+					"  Token expiry      2027-02-14 10:21 (in 3 months)\n  Default chat      none (latest chat is used)\n"+statusBackend+statusHint)
 			}
 			r.terminal.TTYIn = false
 			r.vars[config.EnvPassphrase] = "secretphrase"
@@ -190,7 +204,13 @@ func TestAcceptanceJourney(t *testing.T) {
 			}
 			r.vars[config.EnvToken] = strings.TrimSuffix(strings.TrimPrefix(unlocked.Stdout, assignment), "'\n")
 			r.terminal.TTYIn, r.terminal.Prompts = false, nil
-			run(0, "Connected using THE_AGENT_CLI_TOKEN\n  Token: THE_AGENT_CLI_TOKEN environment variable, expires 2027-02-14 10:21 (in 3 months)\n  Default chat: none (latest chat is used)\n  Backend: "+r.backend.URL()+"\n", "", "status")
+			envTokenReport := "Connected using THE_AGENT_CLI_TOKEN\n  Token storage     THE_AGENT_CLI_TOKEN environment variable\n  Token expiry      "
+			statusDetails := "\n  Default chat      none (latest chat is used)\n" + statusBackend
+			checkStatus(0, envTokenReport+"2027-02-14 10:21 (in 3 months)"+statusDetails)
+			now := r.deps.Now
+			r.deps.Now = func() time.Time { return connectExpiry.Add(48 * time.Hour) }
+			checkStatus(3, envTokenReport+"expired on 2027-02-14 10:21 (2 days ago)"+statusDetails+"  Run `agent-cli connect <KEY>` to connect again.\n")
+			r.deps.Now = now
 			run(0, table, "", "chats")
 			if len(r.terminal.Prompts) != 0 || r.backend.Last(t).Header.Get("Authorization") != "Bearer "+secret {
 				t.Fatal("unlocked session prompted or sent the wrong token")
@@ -211,7 +231,7 @@ func TestAcceptanceJourney(t *testing.T) {
 				t.Fatalf("revocation left a credential file: %v", err)
 			}
 			delete(r.vars, config.EnvToken)
-			run(3, notConnected, "", "status")
+			checkStatus(3, notConnected)
 			run(3, "", "This CLI is not connected. Run `agent-cli connect <KEY>`.\n", "notify", "Build finished")
 
 			guide, err := os.ReadFile(filepath.Join("testdata", "skill_guide_"+goldenOS+".golden"))

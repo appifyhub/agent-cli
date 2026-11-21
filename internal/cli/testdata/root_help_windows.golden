@@ -4,8 +4,7 @@ Usage: agent-cli <command> [flags]
 Commands:
   connect     Connect this machine to your profile using a connect key
   revoke-all  Revoke access for all CLIs on all your machines
-  status      Show the connection status of this machine
-  server      Show the health and version of the backend
+  status      Show local readiness and backend status
   chats       List chats and manage the default target
   notify      Send a notification to one of your chats
   unlock      Unlock a passphrase-protected token for this terminal

@@ -72,6 +72,7 @@ func TestValidateAPIURLRejects(t *testing.T) {
 		{"http://user:secret@localhost", config.URLCredentials, "http://localhost"},
 		{"https://agent.example.test?x=1", config.URLQueryOrFragment, "https://agent.example.test?x=1"},
 		{"https://agent.example.test/#top", config.URLQueryOrFragment, "https://agent.example.test/#top"},
+		{"https://agent.example.test/#", config.URLQueryOrFragment, "https://agent.example.test/#"},
 		{"https://agent.example.test?", config.URLQueryOrFragment, "https://agent.example.test?"},
 		{"agent.example.test", config.URLMalformed, "agent.example.test"},
 		{"https://", config.URLMalformed, "https://"},

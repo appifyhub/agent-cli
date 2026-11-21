@@ -1,38 +1,20 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
+	"io"
 	"strconv"
 
 	"github.com/appifyhub/agent-cli/internal/api"
-	"github.com/appifyhub/agent-cli/internal/config"
 )
-
-// apiURL is the backend address in effect: the environment, then the config file when the home
-// directory is known, then the build default. It reads the config file and writes nothing.
-func (s *rootState) apiURL() (string, error) {
-	d := s.deps
-	var file config.File
-	home, err := config.ResolveHome(d.Getenv, d.UserHomeDir, d.Build.Name)
-	switch {
-	case err == nil:
-		if file, err = config.Load(config.Path(home)); err != nil {
-			return "", translate(d.Text, d.Build.Name, err)
-		}
-	case !errors.Is(err, config.ErrHomeUnavailable):
-		return "", translate(d.Text, d.Build.Name, err)
-	}
-	url, err := config.APIURL(d.Getenv, file, d.Build.APIURL)
-	if err != nil {
-		return "", translate(d.Text, d.Build.Name, err)
-	}
-	return url, nil
-}
 
 // newClient builds the backend client for a validated address. With --verbose it announces each
 // request and describes error answers on stderr.
 func (s *rootState) newClient(apiURL string) *api.Client {
+	return s.clientWithDiagnostics(apiURL, s.deps.Stderr)
+}
+
+func (s *rootState) clientWithDiagnostics(apiURL string, diagnostics io.Writer) *api.Client {
 	d := s.deps
 	options := api.Options{
 		BaseURL:   apiURL,
@@ -42,13 +24,13 @@ func (s *rootState) newClient(apiURL string) *api.Client {
 		Transport: d.HTTP,
 	}
 	if s.verbose {
-		options.OnRequest = func() { _, _ = fmt.Fprintln(d.Stderr, d.Text.T("verbose.calling_backend")) }
+		options.OnRequest = func() { _, _ = fmt.Fprintln(diagnostics, d.Text.T("verbose.calling_backend")) }
 		options.OnError = func(status, code int) {
 			if code == 0 {
-				_, _ = fmt.Fprintln(d.Stderr, d.Text.T("verbose.http_error", "status", strconv.Itoa(status)))
+				_, _ = fmt.Fprintln(diagnostics, d.Text.T("verbose.http_error", "status", strconv.Itoa(status)))
 				return
 			}
-			_, _ = fmt.Fprintln(d.Stderr, d.Text.T("verbose.http_error_code", "status", strconv.Itoa(status), "code", strconv.Itoa(code)))
+			_, _ = fmt.Fprintln(diagnostics, d.Text.T("verbose.http_error_code", "status", strconv.Itoa(status), "code", strconv.Itoa(code)))
 		}
 	}
 	return api.New(options)

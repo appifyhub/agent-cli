@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/appifyhub/agent-cli/internal/cli"
 	"github.com/appifyhub/agent-cli/internal/config"
 	"github.com/appifyhub/agent-cli/internal/credentials"
+	"github.com/appifyhub/agent-cli/internal/term"
 	"github.com/appifyhub/agent-cli/internal/testkit"
 )
 
@@ -673,7 +675,6 @@ func TestRevokeEnvironmentToken(t *testing.T) {
 func statusRig(t *testing.T, goos, mode string) *connectRig {
 	t.Helper()
 	r := newConnectRig(t, goos)
-	r.vars[config.EnvAPIURL] = "https://agent.cloud.appifyhub.com"
 	r.save(t, config.File{
 		DeviceID: "6b8f0d3e-2a1c-4e55-9a37-0c1d2e3f4a5b",
 		APIURL:   "https://stored.example",
@@ -689,7 +690,7 @@ func statusRig(t *testing.T, goos, mode string) *connectRig {
 	return r
 }
 
-func statusSnapshot(t *testing.T, home string) string {
+func statusSnapshot(t *testing.T, home string, names ...string) string {
 	t.Helper()
 	entries, err := os.ReadDir(home)
 	if os.IsNotExist(err) {
@@ -700,6 +701,9 @@ func statusSnapshot(t *testing.T, home string) string {
 	}
 	var snapshot strings.Builder
 	for _, entry := range entries {
+		if len(names) != 0 && !slices.Contains(names, entry.Name()) {
+			continue
+		}
 		body, err := os.ReadFile(filepath.Join(home, entry.Name()))
 		if err != nil {
 			t.Fatal(err)
@@ -711,23 +715,87 @@ func statusSnapshot(t *testing.T, home string) string {
 	return snapshot.String()
 }
 
-func runStatus(t *testing.T, r *connectRig) testkit.Result {
+func readinessTransport(t *testing.T, backend *testkit.Backend) http.RoundTripper {
 	t.Helper()
-	before := statusSnapshot(t, r.home)
-	got := testkit.Run(t, r.deps, "status", "-v")
-	if statusSnapshot(t, r.home) != before || len(r.keychain.Calls) != 0 || len(r.terminal.Prompts) != 0 || r.backend.Count() != 0 {
-		t.Error("status accessed credentials, prompted, contacted network or changed files")
+	return commandRoundTrip(func(request *http.Request) (*http.Response, error) {
+		if backend == nil || request.URL.Scheme+"://"+request.URL.Host != backend.URL() {
+			t.Error("status attempted an unexpected backend request")
+			return nil, errors.New("unexpected status request")
+		}
+		return backend.Client().Transport.RoundTrip(request)
+	})
+}
+
+func runStatus(t *testing.T, r *connectRig, backend *testkit.Backend, args ...string) testkit.Result {
+	t.Helper()
+	var names []string
+	if backend != nil {
+		names = []string{config.FileName, credentials.FileName}
 	}
-	testkit.AssertNoSecret(t, "not-a-token", got.Stdout, got.Stderr)
-	testkit.AssertNoSecret(t, "secretphrase", got.Stdout, got.Stderr)
+	before, calls, prompts := statusSnapshot(t, r.home, names...), len(r.keychain.Calls), len(r.terminal.Prompts)
+	hits := 0
+	if backend != nil {
+		hits = backend.Count()
+	}
+	deps := r.deps
+	deps.HTTP = readinessTransport(t, backend)
+	got := testkit.Run(t, deps, append([]string{"status"}, args...)...)
+	if statusSnapshot(t, r.home, names...) != before || len(r.keychain.Calls) != calls || len(r.terminal.Prompts) != prompts {
+		t.Error("status accessed credentials, prompted or changed files")
+	}
+	if backend != nil {
+		requests := backend.Requests()[hits:]
+		if len(requests) != 1 {
+			t.Errorf("status sent %d requests; want one", len(requests))
+		} else {
+			request := requests[0]
+			if request.Method != http.MethodGet || request.Path != "/cli/status" || request.Header.Get("Authorization") != "" ||
+				request.RawQuery != "" || request.Body != "" {
+				t.Error("status did not send one public GET /cli/status without query or body")
+			}
+		}
+	}
+	for _, secret := range []string{connectKey, connectSecret, "not-a-token", "secretphrase", r.vars[config.EnvToken]} {
+		if secret != "" {
+			testkit.AssertNoSecret(t, secret, got.Stdout, got.Stderr)
+		}
+	}
+	return got
+}
+
+func runOfflineStatus(t *testing.T, r *connectRig) testkit.Result {
+	t.Helper()
+	return runStatus(t, r, nil, "--offline", "--verbose")
+}
+
+func runHealthyStatus(t *testing.T, r *connectRig, backend *testkit.Backend, local testkit.Result) testkit.Result {
+	t.Helper()
+	latest := "2.0.0"
+	if latest == r.deps.Build.Version {
+		latest = "1.0.0"
+	}
+	backend.Handle(http.MethodGet, "/cli/status", testkit.StatusOK("9.8.7", latest))
+	got := runStatus(t, r, backend)
+	prefix, _, _ := strings.Cut(local.Stdout, "  Last checked")
+	report, found := strings.CutPrefix(got.Stdout, prefix)
+	if got.Code != local.Code || got.Stderr != "" || !found || !strings.HasPrefix(report, "\n  Backend status    ok\n") ||
+		!strings.Contains(report, "  Latest CLI        "+latest+"\n"+statusUpdate) {
+		t.Fatalf("online status = %#v; want the local report and exit %d, plus healthy backend and version comparison", got, local.Code)
+	}
 	return got
 }
 
 func TestStatusConnectedSample(t *testing.T) {
 	r := statusRig(t, "darwin", "keychain")
+	r.vars[config.EnvAPIURL] = "https://agent.cloud.appifyhub.com"
 	r.deps.Build.APIURL = r.vars[config.EnvAPIURL]
-	got := runStatus(t, r)
-	want := "Connected as Example User (workstation)\n  Device ID: 6b8f0d3e-2a1c-4e55-9a37-0c1d2e3f4a5b\n  Token: macOS Keychain, expires 2027-02-14 10:21 (in 3 months)\n  Default chat: 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7 (telegram · Example Chat, private)\n  Backend: https://agent.cloud.appifyhub.com\n"
+	r.deps.Build.Version = "1.2.3"
+	got := runOfflineStatus(t, r)
+	want := "✓ Connected as Example User (workstation)\n" +
+		"  Device ID         6b8f0d3e-2a1c-4e55-9a37-0c1d2e3f4a5b\n" +
+		"  Token storage     macOS Keychain\n  Token expiry      2027-02-14 10:21 (in 3 months)\n" +
+		"  Default chat      3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7 (telegram · Example Chat, private)\n" +
+		"  Backend           agent.cloud.appifyhub.com\n  Local CLI         1.2.3\n" + statusNever
 	if got.Code != 0 || got.Stdout != want || got.Stderr != "" {
 		t.Fatal(got)
 	}
@@ -735,6 +803,12 @@ func TestStatusConnectedSample(t *testing.T) {
 	help := testkit.Run(t, r.deps, "status", "--help")
 	if !strings.Contains(help.Stdout, strings.TrimSuffix(got.Stdout, "\n")) {
 		t.Error("sample in help differs from actual status output")
+	}
+	r.deps.Term = &testkit.FakeTerm{TTYOut: true, ANSIOK: true}
+	colored := runOfflineStatus(t, r)
+	heading, rest, _ := strings.Cut(want, "\n")
+	if colored.Code != 0 || colored.Stdout != term.Paint(heading, term.Success, true)+"\n"+rest || colored.Stderr != "" {
+		t.Fatal(colored)
 	}
 }
 
@@ -748,10 +822,13 @@ func TestStatusFreshAndMissingCredentials(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			got := runStatus(t, r)
-			if got.Code != 3 || got.Stderr != "" || got.Stdout != "Not connected.\nGet a connect key from the agent's chat settings, then run `agent-cli connect <KEY>`.\n" {
+			got := runOfflineStatus(t, r)
+			want := "Not connected.\nGet a connect key from the agent's chat settings, then run `agent-cli connect <KEY>`.\n" +
+				"  Backend           " + strings.TrimPrefix(r.backend.URL(), "http://") + "\n  Local CLI         " + r.deps.Build.Version + "\n" + statusNever
+			if got.Code != 3 || got.Stderr != "" || got.Stdout != want {
 				t.Fatal(got)
 			}
+			runHealthyStatus(t, r, r.backend, got)
 		})
 	}
 }
@@ -771,24 +848,35 @@ func TestStatusStorageAndExpiry(t *testing.T) {
 		t.Run(c.goos+"/"+c.mode, func(t *testing.T) {
 			r := statusRig(t, c.goos, c.mode)
 			r.vars[config.EnvPassphrase] = "secretphrase"
-			got := runStatus(t, r)
-			if got.Code != c.code || got.Stderr != "" || !strings.Contains(got.Stdout, "  Token: "+c.location+", expires 2027-02-14 10:21 (in 3 months)\n") {
-				t.Fatal(got)
-			}
+			header := "Connected as Example User (workstation)\n  Device ID         6b8f0d3e-2a1c-4e55-9a37-0c1d2e3f4a5b\n" +
+				"  Token storage     " + c.location + "\n"
+			details := "\n  Default chat      3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7 (telegram · Example Chat, private)\n" +
+				"  Backend           " + strings.TrimPrefix(r.backend.URL(), "http://") + "\n  Local CLI         " + r.deps.Build.Version + "\n"
+			var hint string
 			if c.mode == "passphrase" {
-				hint := `  To unlock: eval "$(agent-cli unlock)"`
+				hint = "  To unlock: eval \"$(agent-cli unlock)\"\n"
 				if c.goos == "windows" {
-					hint = "  To unlock: agent-cli unlock --shell pwsh | Invoke-Expression"
-				}
-				if !strings.HasSuffix(got.Stdout, hint+"\n") {
-					t.Fatal(got)
+					hint = "  To unlock: agent-cli unlock --shell pwsh | Invoke-Expression\n"
 				}
 			}
-			r.deps.Now = func() time.Time { return connectExpiry.Add(48 * time.Hour) }
-			got = runStatus(t, r)
-			if got.Code != 3 || !strings.Contains(got.Stdout, "expired on 2027-02-14 10:21 (2 days ago)") || !strings.HasSuffix(got.Stdout, "  Run `agent-cli connect <KEY>` to connect again.\n") {
+			readyHeader := header
+			if c.code == 0 {
+				readyHeader = "✓ " + header
+			}
+			got := runOfflineStatus(t, r)
+			if want := readyHeader + "  Token expiry      2027-02-14 10:21 (in 3 months)" + details + hint + statusNever; got.Code != c.code || got.Stdout != want || got.Stderr != "" {
 				t.Fatal(got)
 			}
+			runHealthyStatus(t, r, r.backend, got)
+
+			r.deps.Now = func() time.Time { return connectExpiry.Add(48 * time.Hour) }
+			got = runOfflineStatus(t, r)
+			want := header + "  Token expiry      expired on 2027-02-14 10:21 (2 days ago)" + details +
+				"  Run `agent-cli connect <KEY>` to connect again.\n" + statusChecked
+			if got.Code != 3 || got.Stdout != want || got.Stderr != "" {
+				t.Fatal(got)
+			}
+			runHealthyStatus(t, r, r.backend, got)
 		})
 	}
 }
@@ -799,11 +887,11 @@ func TestStatusDefaultsAndBackend(t *testing.T) {
 		stored               config.Default
 		want                 string
 	}{
-		{"group", "", "", config.Default{ChatID: "c9", ChatPlatform: "telegram", ChatTitle: "Dev Team"}, "  Default chat: c9 (telegram · Dev Team, group)"},
-		{"platform", "", "", config.Default{Platform: "whatsapp"}, "  Default platform: whatsapp"},
-		{"none", "", "", config.Default{}, "  Default chat: none (latest chat is used)"},
-		{"env chat", "c7", "telegram", config.Default{ChatID: "c9"}, "  Default chat: c7 (from THE_AGENT_CLI_DEFAULT_CHAT)"},
-		{"env platform", "", "WhatsApp", config.Default{ChatID: "c9"}, "  Default platform: whatsapp (from THE_AGENT_CLI_DEFAULT_PLATFORM)"},
+		{"group", "", "", config.Default{ChatID: "c9", ChatPlatform: "telegram", ChatTitle: "Dev Team"}, "  Default chat      c9 (telegram · Dev Team, group)"},
+		{"platform", "", "", config.Default{Platform: "whatsapp"}, "  Default platform  whatsapp"},
+		{"none", "", "", config.Default{}, "  Default chat      none (latest chat is used)"},
+		{"env chat", "c7", "telegram", config.Default{ChatID: "c9"}, "  Default chat      c7 (from THE_AGENT_CLI_DEFAULT_CHAT)"},
+		{"env platform", "", "WhatsApp", config.Default{ChatID: "c9"}, "  Default platform  whatsapp (from THE_AGENT_CLI_DEFAULT_PLATFORM)"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := statusRig(t, "linux", "keychain")
@@ -811,7 +899,7 @@ func TestStatusDefaultsAndBackend(t *testing.T) {
 			f.Default = c.stored
 			r.save(t, f)
 			r.vars[config.EnvDefaultChat], r.vars[config.EnvDefaultPlatform] = c.chat, c.platform
-			got := runStatus(t, r)
+			got := runOfflineStatus(t, r)
 			if got.Code != 0 || got.Stderr != "" || !strings.Contains(got.Stdout, c.want+"\n") {
 				t.Fatal(got)
 			}
@@ -819,37 +907,78 @@ func TestStatusDefaultsAndBackend(t *testing.T) {
 	}
 	r := statusRig(t, "linux", "keychain")
 	delete(r.vars, config.EnvAPIURL)
-	if got := runStatus(t, r); !strings.Contains(got.Stdout, "  Backend: https://stored.example\n") {
+	if got := runOfflineStatus(t, r); !strings.Contains(got.Stdout, "  Backend           stored.example\n") {
 		t.Fatal(got)
 	}
 	f := r.file(t)
 	f.APIURL = ""
 	r.save(t, f)
-	if got := runStatus(t, r); !strings.Contains(got.Stdout, "  Backend: http://localhost\n") {
+	if got := runOfflineStatus(t, r); !strings.Contains(got.Stdout, "  Backend           localhost\n") {
 		t.Fatal(got)
 	}
 	r.deps.Build.APIURL = ""
-	if got := runStatus(t, r); !strings.Contains(got.Stdout, "  Backend: not set\n") {
+	if got := runOfflineStatus(t, r); !strings.Contains(got.Stdout, "  Backend           not set\n") {
 		t.Fatal(got)
 	}
 	f.Token.UserName, f.Token.Hostname, f.Default.ChatID = "\x1b[31mMorpheus", "host\x1b[0m", "c\x00"
 	f.Default.ChatTitle = "\x1b]0;bad\x07Title"
 	r.save(t, f)
-	if got := runStatus(t, r); strings.ContainsAny(got.Stdout, "\x1b\x00\x07") {
+	if got := runOfflineStatus(t, r); strings.ContainsAny(got.Stdout, "\x1b\x00\x07") {
 		t.Fatal(got)
+	}
+}
+
+func TestStatusBackendPrecedence(t *testing.T) {
+	env, stored, build := testkit.NewBackend(t), testkit.NewBackend(t), testkit.NewBackend(t)
+	for _, c := range []struct {
+		name, env, stored, build, displayed string
+		selected                            *testkit.Backend
+	}{
+		{"environment wins", env.URL(), stored.URL(), build.URL(), env.URL(), env},
+		{"config wins", "", stored.URL(), build.URL(), stored.URL(), stored},
+		{"build default", "", "", build.URL(), build.URL(), build},
+		{"invalid environment", "not-a-url", stored.URL(), build.URL(), "invalid address", nil},
+		{"invalid config", "", "http://insecure.example", build.URL(), "invalid address", nil},
+		{"invalid build default", "", "", "not-a-url", "invalid address", nil},
+		{"URL credentials", "https://user:secret@agent.example.test", stored.URL(), build.URL(), "invalid address", nil},
+		{"empty fragment", env.URL() + "#", stored.URL(), build.URL(), "invalid address", nil},
+		{"no address", "", "", "", "not set", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := statusRig(t, "linux", "keychain")
+			r.vars[config.EnvAPIURL], r.deps.Build.APIURL = c.env, c.build
+			f := r.file(t)
+			f.APIURL = c.stored
+			r.save(t, f)
+			local := runOfflineStatus(t, r)
+			if local.Code != 0 || local.Stderr != "" ||
+				!strings.Contains(local.Stdout, "  Backend           "+strings.TrimPrefix(c.displayed, "http://")+"\n") ||
+				!strings.HasSuffix(local.Stdout, statusNever) || strings.Contains(local.Stdout, "secret@") {
+				t.Fatal(local)
+			}
+			if c.selected != nil {
+				runHealthyStatus(t, r, c.selected, local)
+				return
+			}
+			got := runStatus(t, r, nil, "--verbose")
+			prefix := strings.TrimSuffix(local.Stdout, statusNever)
+			if got.Code != local.Code || got.Stdout != prefix+statusUnavailable+statusNever || got.Stderr != "" {
+				t.Fatal(got)
+			}
+		})
 	}
 }
 
 func TestStatusEnvironmentToken(t *testing.T) {
 	for _, c := range []struct {
-		name string
-		exp  any
-		code int
-		want string
+		name   string
+		exp    any
+		code   int
+		expiry string
 	}{
-		{"future", connectExpiry.Unix(), 0, "expires 2027-02-14 10:21 (in 3 months)"},
+		{"future", connectExpiry.Unix(), 0, "2027-02-14 10:21 (in 3 months)"},
 		{"past", time.Date(2026, 11, 12, 9, 21, 0, 0, time.UTC).Unix(), 3, "expired on 2026-11-12 10:21 (2 days ago)"},
-		{"absent", nil, 0, "  Token: THE_AGENT_CLI_TOKEN environment variable\n"},
+		{"absent", nil, 0, "unknown"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := statusRig(t, "linux", "passphrase")
@@ -862,18 +991,80 @@ func TestStatusEnvironmentToken(t *testing.T) {
 			}
 			raw := testkit.RawToken(map[string]any{"alg": "HS256"}, payload)
 			r.vars[config.EnvToken] = raw
-			got := runStatus(t, r)
-			if got.Code != c.code || got.Stderr != "" || !strings.HasPrefix(got.Stdout, "Connected using THE_AGENT_CLI_TOKEN\n") || !strings.Contains(got.Stdout, c.want) || strings.Contains(got.Stdout, "To unlock") {
+			want := "Connected using THE_AGENT_CLI_TOKEN\n  Token storage     THE_AGENT_CLI_TOKEN environment variable\n" +
+				"  Token expiry      " + c.expiry + "\n  Default chat      3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7 (telegram · Example Chat, private)\n" +
+				"  Backend           " + strings.TrimPrefix(r.backend.URL(), "http://") + "\n  Local CLI         " + r.deps.Build.Version + "\n"
+			if c.code == 3 {
+				want += "  Run `agent-cli connect <KEY>` to connect again.\n"
+			}
+			want += statusNever
+			got := runOfflineStatus(t, r)
+			if got.Code != c.code || got.Stdout != want || got.Stderr != "" {
 				t.Fatal(got)
 			}
-			testkit.AssertNoSecret(t, raw, got.Stdout, got.Stderr)
+			runHealthyStatus(t, r, r.backend, got)
 		})
 	}
-	r := newConnectRig(t, "linux")
-	r.vars[config.EnvToken] = "garbage"
-	got := runStatus(t, r)
-	if got.Code != 3 || got.Stdout != "" || got.Stderr != "error: THE_AGENT_CLI_TOKEN is not a valid CLI token\n" {
-		t.Fatal(got)
+}
+
+func TestStatusLocalErrorsSkipRequests(t *testing.T) {
+	t.Run("malformed config", func(t *testing.T) {
+		r := statusRig(t, "linux", "keychain")
+		path := config.Path(r.home)
+		if err := os.WriteFile(path, []byte("invalid toml ["), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		local := runOfflineStatus(t, r)
+		if local.Code != 1 || local.Stdout != "" || !strings.HasPrefix(local.Stderr, "error: could not read "+path+": ") || !strings.HasSuffix(local.Stderr, "; fix or delete the file\n") {
+			t.Fatal(local)
+		}
+		if got := runStatus(t, r, nil, "--verbose"); got != local {
+			t.Fatal(got)
+		}
+	})
+	for _, c := range []struct {
+		name, env, value, stderr string
+		code                     int
+	}{
+		{"invalid token", config.EnvToken, "garbage", "error: THE_AGENT_CLI_TOKEN is not a valid CLI token\n", 3},
+		{"invalid default", config.EnvDefaultPlatform, "slack", "error: invalid THE_AGENT_CLI_DEFAULT_PLATFORM \"slack\": use telegram or whatsapp\n", 2},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := statusRig(t, "linux", "keychain")
+			r.vars[c.env] = c.value
+			want := testkit.Result{Code: c.code, Stderr: c.stderr}
+			if got := runOfflineStatus(t, r); got != want {
+				t.Fatal(got)
+			}
+			if got := runStatus(t, r, nil, "--verbose"); got != want {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestStatusLocalWriteFailureSkipsRequests(t *testing.T) {
+	t.Run("disconnected", func(t *testing.T) {
+		checkStatusLocalWriteFailure(t, newConnectRig(t, "linux"))
+	})
+	t.Run("connected", func(t *testing.T) {
+		checkStatusLocalWriteFailure(t, statusRig(t, "linux", "keychain"))
+	})
+}
+
+func checkStatusLocalWriteFailure(t *testing.T, r *connectRig) {
+	t.Helper()
+	before := statusSnapshot(t, r.home)
+	var stderr bytes.Buffer
+	deps := r.deps
+	deps.Stdout, deps.Stderr = commandWriteFailure{}, &stderr
+	deps.HTTP = readinessTransport(t, nil)
+	code := cli.Run(t.Context(), deps, []string{"status", "--verbose"})
+	if code != 1 || stderr.String() != "error: operation failed\n" {
+		t.Fatalf("code %d, stderr %q", code, stderr.String())
+	}
+	if statusSnapshot(t, r.home) != before || len(r.keychain.Calls) != 0 || len(r.terminal.Prompts) != 0 {
+		t.Error("status accessed credentials, prompted or changed files")
 	}
 }
 

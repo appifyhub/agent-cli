@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,6 +141,42 @@ func TestCompletionScripts(t *testing.T) {
 	}
 }
 
+func TestRootHelpAndCompletionOmitServer(t *testing.T) {
+	for _, name := range commandNames(t) {
+		if name == "server" {
+			t.Fatal("root help lists server")
+		}
+	}
+
+	got := runOn(t, "linux", "__complete", "")
+	if got.Code != 0 {
+		t.Fatal(got)
+	}
+	foundStatus := false
+	for _, line := range strings.Split(got.Stdout, "\n") {
+		name, _, _ := strings.Cut(line, "\t")
+		switch name {
+		case "server":
+			t.Fatal("root completion lists server")
+		case "status":
+			foundStatus = true
+		}
+	}
+	if !foundStatus {
+		t.Fatalf("root completion lacks status: %+v", got)
+	}
+}
+
+func TestServerIsUnknown(t *testing.T) {
+	d := testkit.NewDeps(testkit.WithHTTP(commandRoundTrip(func(*http.Request) (*http.Response, error) {
+		panic("unknown command must not contact the backend")
+	})))
+	got := testkit.Run(t, d, "server")
+	if got.Code != 2 || got.Stdout != "" || got.Stderr != "error: unknown command \"server\" for \"agent-cli\"\n" {
+		t.Fatal(got)
+	}
+}
+
 func TestCompletionRejectsOtherShells(t *testing.T) {
 	for _, args := range [][]string{{"completion", "tcsh"}, {"completion"}, {"completion", "bash", "zsh"}} {
 		res := runOn(t, "linux", args...)
@@ -171,13 +208,16 @@ func TestUsageErrorsAreOneLine(t *testing.T) {
 }
 
 func TestCommandHelpGoldens(t *testing.T) {
-	for _, command := range []string{"completion", "env", "server", "help", "revoke-all", "status", "chats", "chats default", "notify", "unlock", "skill", "skill show", "skill install", "skill status", "skill remove"} {
+	for _, command := range []string{"completion", "env", "help", "revoke-all", "status", "chats", "chats default", "notify", "unlock", "skill", "skill show", "skill install", "skill status", "skill remove"} {
 		for _, c := range []struct{ goos, golden string }{{"darwin", "unix"}, {"linux", "unix"}, {"windows", "windows"}} {
 			path := strings.Fields(command)
 			forms := [][]string{append(append([]string{}, path...), "-h"), append(append([]string{}, path...), "--help"), append([]string{"help"}, path...)}
 			first := runOn(t, c.goos, forms[0]...)
 			if first.Code != 0 || first.Stderr != "" {
 				t.Fatalf("%v: %+v", forms[0], first)
+			}
+			if command == "status" && !strings.Contains(first.Stdout, "Use --offline to show local readiness and the last check time without sending requests or writing state.") {
+				t.Errorf("%s: status help does not explain --offline:\n%s", c.goos, first.Stdout)
 			}
 			testkit.Golden(t, strings.ReplaceAll(command, " ", "_")+"_help_"+c.golden, first.Stdout)
 			for _, args := range forms[1:] {
@@ -328,8 +368,13 @@ func TestSkillGuideAndPointer(t *testing.T) {
 	d, _, _ := skillTestDeps(t)
 	d.Build = buildinfo.Resolve(buildinfo.Info{Name: "abot-dev"})
 	got := testkit.Run(t, d, "skill", "show")
-	if strings.Contains(got.Stdout, "agent-cli") || !strings.Contains(got.Stdout, "abot-dev notify") {
+	if got.Code != 0 || got.Stderr != "" || strings.Contains(got.Stdout, "agent-cli") || strings.Contains(got.Stdout, "abot-dev server ") {
 		t.Fatal(got)
+	}
+	for _, want := range []string{"abot-dev notify", "Run abot-dev status --offline first.", "the user may run abot-dev status without --offline."} {
+		if !strings.Contains(got.Stdout, want) {
+			t.Errorf("named-build skill guide lacks %q:\n%s", want, got.Stdout)
+		}
 	}
 	d.UserHomeDir = func() (string, error) { panic("show must not resolve home") }
 	d.Getwd = func() (string, error) { panic("show must not resolve cwd") }

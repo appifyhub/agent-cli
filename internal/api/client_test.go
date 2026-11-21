@@ -100,7 +100,7 @@ func TestSlowServerTimesOut(t *testing.T) {
 func TestNothingListeningIsUnreachable(t *testing.T) {
 	b := testkit.NewBackend(t)
 	client := newClient(b, func(o *api.Options) { o.BaseURL = "http://127.0.0.1:1" })
-	_, err := client.Health(t.Context())
+	_, err := client.Status(t.Context())
 	apiErr := wantKind(t, err, api.KindUnreachable)
 	if apiErr.Status != 0 || apiErr.Cause == nil {
 		t.Errorf("got %+v", apiErr)
@@ -138,7 +138,7 @@ func TestCancelledContextIsReportedAsSuch(t *testing.T) {
 func TestVerboseHooks(t *testing.T) {
 	b := testkit.NewBackend(t)
 	b.Handle("GET", "/cli/chats", testkit.Err(422, 1034, "Not enough credits"))
-	b.Handle("GET", "/health", testkit.HealthOK("1"))
+	b.Handle("GET", "/cli/status", testkit.StatusOK("1", "2.0.0"))
 	b.Handle("DELETE", "/cli/user/u1/devices", testkit.Detail(403, "nope"))
 	var requests int
 	var errs [][2]int
@@ -146,7 +146,7 @@ func TestVerboseHooks(t *testing.T) {
 		o.OnRequest = func() { requests++ }
 		o.OnError = func(status, code int) { errs = append(errs, [2]int{status, code}) }
 	})
-	_, _ = client.Health(t.Context())
+	_, _ = client.Status(t.Context())
 	_, _ = client.Chats(t.Context(), secretToken)
 	_ = client.RevokeAll(t.Context(), secretToken, "u1")
 	if requests != 3 {
@@ -164,7 +164,7 @@ func TestVerboseHookIsSilentForTransportFailures(t *testing.T) {
 		o.BaseURL = "http://127.0.0.1:1"
 		o.OnError = func(int, int) { called = true }
 	})
-	_, _ = client.Health(t.Context())
+	_, _ = client.Status(t.Context())
 	if called {
 		t.Error("OnError is for backend answers only")
 	}
@@ -240,13 +240,13 @@ func TestUnusableErrorBodiesPreserveStatus(t *testing.T) {
 
 func TestRequiredSuccessBodiesRemainStrict(t *testing.T) {
 	for _, oversized := range []bool{false, true} {
-		for _, endpoint := range []string{"connect", "chats", "health"} {
+		for _, endpoint := range []string{"connect", "chats", "status"} {
 			content := `{"token":"t","expires_at":"2027-02-14T09:21:00Z","user_id":"u","user_display_name":"Neo"}`
 			switch endpoint {
 			case "chats":
 				content = "[]"
-			case "health":
-				content = `{"status":"ok"}`
+			case "status":
+				content = `{"status":"ok","service_version":"5.41.0","cli_version":null}`
 			}
 			body := unusableBody(content, oversized)
 			requests := 0
@@ -260,8 +260,8 @@ func TestRequiredSuccessBodiesRemainStrict(t *testing.T) {
 				_, err = client.Connect(t.Context(), connectRequest())
 			case "chats":
 				_, err = client.Chats(t.Context(), secretToken)
-			case "health":
-				_, err = client.Health(t.Context())
+			case "status":
+				_, err = client.Status(t.Context())
 			}
 			kind := api.KindUnreachable
 			if oversized {
@@ -272,5 +272,82 @@ func TestRequiredSuccessBodiesRemainStrict(t *testing.T) {
 				t.Errorf("%s oversized=%v: error %#v, requests/closes %d/%d", endpoint, oversized, got, requests, body.closes)
 			}
 		}
+	}
+}
+
+func TestStatusEndpoint(t *testing.T) {
+	const valid = `{"status":"ok","service_version":"9.9.9","cli_version":"v1.2.3","extra":{"ignored":true}}`
+	const success api.Kind = -1
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		want   api.Status
+		kind   api.Kind
+	}{
+		{"version", 200, valid, api.Status{Status: "ok", Version: "9.9.9", CLIVersion: "v1.2.3"}, success},
+		{"null CLI version", 200, `{"status":"degraded","service_version":"9.9.9","cli_version":null}`, api.Status{Status: "degraded", Version: "9.9.9"}, success},
+		{"empty backend version", 200, `{"status":"ok","service_version":"","cli_version":null}`, api.Status{Status: "ok"}, success},
+		{"missing status", 200, `{"service_version":"9.9.9","cli_version":null}`, api.Status{}, api.KindUnexpected},
+		{"non-string status", 200, `{"status":false,"service_version":"9.9.9","cli_version":null}`, api.Status{}, api.KindUnexpected},
+		{"null status", 200, `{"status":null,"service_version":"9.9.9","cli_version":null}`, api.Status{}, api.KindUnexpected},
+		{"empty status", 200, `{"status":"","service_version":"9.9.9","cli_version":null}`, api.Status{}, api.KindUnexpected},
+		{"missing backend version", 200, `{"status":"ok","cli_version":null}`, api.Status{}, api.KindUnexpected},
+		{"non-string backend version", 200, `{"status":"ok","service_version":{},"cli_version":null}`, api.Status{}, api.KindUnexpected},
+		{"null backend version", 200, `{"status":"ok","service_version":null,"cli_version":null}`, api.Status{}, api.KindUnexpected},
+		{"missing CLI version", 200, `{"status":"ok","service_version":"9.9.9"}`, api.Status{Status: "ok", Version: "9.9.9"}, success},
+		{"unknown uppercase field ignored", 200, `{"status":"ok","service_version":"9.9.9","CLI_VERSION":"v1.2.3"}`, api.Status{Status: "ok", Version: "9.9.9"}, success},
+		{"non-string CLI version", 200, `{"status":"ok","service_version":"9.9.9","cli_version":123}`, api.Status{}, api.KindUnexpected},
+		{"malformed", 200, `<html>`, api.Status{}, api.KindUnexpected},
+		{"array", 200, `[]`, api.Status{}, api.KindUnexpected},
+		{"truncated", 200, strings.TrimSuffix(valid, "}"), api.Status{}, api.KindUnexpected},
+		{"trailing JSON", 200, valid + `{}`, api.Status{}, api.KindUnexpected},
+		{"accepted", 202, valid, api.Status{}, api.KindUnexpected},
+		{"no content", 204, "", api.Status{}, api.KindUnexpected},
+		{"unauthorized", 401, valid, api.Status{}, api.KindFailure},
+		{"forbidden", 403, valid, api.Status{}, api.KindFailure},
+		{"not found", 404, valid, api.Status{}, api.KindFailure},
+		{"rate limited", 429, valid, api.Status{}, api.KindRateLimited},
+		{"service unavailable", 503, valid, api.Status{}, api.KindServerFault},
+		{"redirect", 302, "", api.Status{}, api.KindUnexpected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := 0
+			client := api.New(api.Options{BaseURL: "http://backend.test", Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				requests++
+				_, auth := r.Header["Authorization"]
+				if r.Method != http.MethodGet || r.URL.RequestURI() != "/cli/status" || auth || r.Body != nil {
+					t.Errorf("unexpected request: %s %s, auth=%v body=%v", r.Method, r.URL.RequestURI(), auth, r.Body != nil)
+				}
+				return &http.Response{
+					StatusCode: tc.status,
+					Header:     http.Header{"Location": {"/elsewhere"}},
+					Body:       io.NopCloser(strings.NewReader(tc.body)),
+				}, nil
+			})})
+			got, err := client.Status(t.Context())
+			if tc.kind == success {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if apiErr := wantKind(t, err, tc.kind); apiErr.Status != tc.status {
+				t.Errorf("error status = %d, want %d", apiErr.Status, tc.status)
+			}
+			if got != tc.want || requests != 1 {
+				t.Errorf("status = %+v, requests = %d; want %+v and one request", got, requests, tc.want)
+			}
+		})
+	}
+}
+
+func TestStatusEndpointPropagatesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	client := api.New(api.Options{BaseURL: "http://backend.test", Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		cancel()
+		return nil, r.Context().Err()
+	})})
+	if got, err := client.Status(ctx); got != (api.Status{}) || !errors.Is(err, context.Canceled) {
+		t.Errorf("got %+v, %v; want empty status and context.Canceled", got, err)
 	}
 }
