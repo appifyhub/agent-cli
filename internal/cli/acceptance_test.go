@@ -121,7 +121,11 @@ func TestAcceptanceJourney(t *testing.T) {
 				} else if r.keychain.Len() != 0 {
 					t.Fatal("reconnect kept the previous keychain secret")
 				}
-				checkStatus(statusCode, "Connected as Morpheus (morpheus-mbp)\n  Device ID         "+deviceID+"\n  Token storage     "+statusLocation+"\n"+
+				heading := "Connected as Morpheus (morpheus-mbp)\n"
+				if statusCode == 0 {
+					heading = "✓ " + heading
+				}
+				checkStatus(statusCode, heading+"  Device ID         "+deviceID+"\n  Token storage     "+statusLocation+"\n"+
 					"  Token expiry      2027-02-14 10:21 (in 3 months)\n  Default chat      none (latest chat is used)\n"+statusBackend+statusHint)
 			}
 			r.terminal.TTYIn = false

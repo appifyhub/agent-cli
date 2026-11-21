@@ -115,15 +115,14 @@ func (s *rootState) localStatus() (statusLocal, error) {
 		if raw != "" {
 			fmt.Fprintln(&b, cat.T("status.connected_environment"))
 		} else {
-			key := "status.connected"
+			user := term.Clean(file.Token.UserName, 0)
+			hostname := term.Clean(file.Token.Hostname, 0)
 			if local.ready {
-				key = "status.connected_ready"
+				heading := cat.T("status.connected_ready", "user", user, "hostname", hostname)
+				fmt.Fprintln(&b, d.styled(term.Out, term.Success, heading))
+			} else {
+				fmt.Fprintln(&b, cat.T("status.connected", "user", user, "hostname", hostname))
 			}
-			heading := cat.T(key, "user", term.Clean(file.Token.UserName, 0), "hostname", term.Clean(file.Token.Hostname, 0))
-			if local.ready {
-				heading = d.styled(term.Out, term.Success, heading)
-			}
-			fmt.Fprintln(&b, heading)
 			statusRow(&b, cat.T("status.label_device"), term.Clean(file.DeviceID, 0))
 			location = cat.T("connect.location_keychain")
 			if mode != credentials.ModeKeychain {
