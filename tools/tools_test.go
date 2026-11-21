@@ -364,7 +364,7 @@ func TestReleaseBeta(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 	assertContainsAll(t, "goreleaser call", r.log(t),
-		"call goreleaser release --clean --skip=nfpm",
+		"call goreleaser release --clean --skip=nfpm,homebrew,scoop",
 		"GORELEASER_CURRENT_TAG=v0.2.0-beta\n",
 		"GORELEASER_PREVIOUS_TAG=v0.1.0-beta\n",
 		"THE_AGENT_CLI_BRANDED_NAME=abot-dev\n",
@@ -420,7 +420,7 @@ func TestReleaseSnapshotPublishesNothing(t *testing.T) {
 		quality, branded, skip string
 	}{
 		{"ga", "abot", ""},
-		{"beta", "abot-dev", " --skip=nfpm"},
+		{"beta", "abot-dev", " --skip=nfpm,homebrew,scoop"},
 	} {
 		t.Run(c.quality, func(t *testing.T) {
 			r := newReleaseRepo(t, "0.2.0\n", "first")

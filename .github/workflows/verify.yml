@@ -61,11 +61,21 @@ jobs:
       - name: Check final newlines
         run: sh scripts/check-eof.sh
 
-      - name: Check the GoReleaser configuration
+      - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
-          args: check
+          install-only: true
+
+      - name: Check the GoReleaser configuration
+        run: |
+          # brews is intentionally retained for Linux and unsigned macOS installs
+          if goreleaser check; then
+            exit 0
+          else
+            status=$?
+            test "$status" -eq 2
+          fi
 
       - name: Scan dependencies for vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
