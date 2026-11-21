@@ -14,7 +14,7 @@ This repository contains the **complete** codebase of The Agent's command-line c
 
 The CLI connects a machine to your profile and lets scripts and terminals interact with your agent, which is handy for long builds, cron jobs and anything else that should tap you on the shoulder or talk to you. It talks to the [backend](https://github.com/appifyhub/agent-backend)'s API.
 
-The tool is generic: out of the box it talks to a backend at `http://localhost`, and `THE_AGENT_CLI_API_URL` points it anywhere else, such as your own deployment of the backend. For the hosted service, every release also ships `abot`, the same program with the hosted service's address built in.
+The tool is generic: out of the box it talks to a backend at `http://localhost`, and it can be pointed at any other instance, such as your own deployment of the backend. For the hosted service, every release also ships `abot`, the same program with the hosted service's address built in.
 
 See the rest of this document for installation and a developer's overview.
 
@@ -28,18 +28,19 @@ Please also take note of the [License](./LICENSE).
 
 ### Installation
 
-Every release on the [Releases page](https://github.com/appifyhub/agent-cli/releases) has archives for macOS, Linux and Windows on amd64 and arm64, plus a `checksums.txt` with SHA-256 sums:
+#### Generic CLI
 
-| Archive | What it is |
-| --- | --- |
-| `agent-cli_<version>_<os>_<arch>` | The generic CLI, for any backend instance |
-| `abot_<version>_<os>_<arch>` | The same CLI, preconfigured for the hosted service |
+Download the `agent-cli_<version>_<os>_<arch>` archive for your machine from the [Releases page](https://github.com/appifyhub/agent-cli/releases). Archives cover macOS, Linux and Windows on amd64 and arm64 (`.tar.gz` on macOS and Linux, `.zip` on Windows). Unpack the archive and put the binary on your `PATH`. macOS 13 or later is required.
 
-Pre-releases carry the same pair as `agent-cli-dev` and `abot-dev`, where `abot-dev` points at the hosted service's staging environment. Production releases also include `.deb` and `.rpm` packages of `abot` for Linux on amd64 and arm64.
+Release artifacts are unsigned: there is no Apple code signing or notarization, Windows Authenticode signature, or separate signature file. Verify downloads against the SHA-256 sums in `checksums.txt`.
 
-Unpack the archive and put the binary on your `PATH`. On macOS, a manually downloaded binary can be quarantined by Gatekeeper; clear the flag with `xattr -d com.apple.quarantine ./agent-cli`. MacOS 13 or later is required. On Windows, SmartScreen may warn on first launch.
+On macOS, a manually downloaded binary can be quarantined by Gatekeeper; after verifying the download, clear the flag with `xattr -d com.apple.quarantine ./agent-cli`. On Windows, SmartScreen may warn on first launch; use its **More info → Run anyway** option only after verifying the download and its source.
 
-The hosted build is also available from package managers, which avoid both prompts:
+#### Hosted service
+
+The optional `abot` build is the same CLI with the hosted service's address built in. Production releases provide matching archives and `.deb` and `.rpm` packages for Linux on amd64 and arm64. Pre-releases contain only `agent-cli-dev` and `abot-dev` archives, with the latter pointing at staging.
+
+For the hosted build, prefer Homebrew on macOS and Linux or Scoop on Windows to avoid the manual-download prompts:
 
 ```bash
 # macOS and Linux (Homebrew)
@@ -60,34 +61,7 @@ On macOS and Linux, Homebrew and the Linux packages also install the alias `@abo
 
 ### Usage
 
-```bash
-# connect this machine once, with the connect key from your agent
-agent-cli connect <KEY>
-
-# send yourself a notification, for example when a long job ends
-./backup.sh && agent-cli notify "Backup finished"
-
-# or pipe the message in, for example the last line of a script's output
-./backup.sh | tail -n 1 | agent-cli notify
-
-# see which environment variables the CLI reads and what they are set to
-agent-cli env
-```
-
-`abot` is the same CLI with the hosted service's address built in, so every command works the same way and only the name changes. On macOS and Linux, `@abot` is an alias for it:
-
-```bash
-# the generic CLI, pointed at the hosted service by hand
-THE_AGENT_CLI_API_URL=https://agent.cloud.appifyhub.com agent-cli notify "Backup finished"
-
-# the same thing with the hosted build, which already knows the address
-abot notify "Backup finished"
-@abot notify "Backup finished"
-```
-
-Each build keeps its own state (`~/.agent-cli`, `~/.abot`), so connect the one you use.
-
-The CLI documents itself, so the help always matches the installed version: `agent-cli help` lists the commands and exit codes, and `agent-cli help <command>` shows the usage, flags and examples of one command.
+The CLI documents itself, so the help always matches the installed version: `agent-cli help` lists the commands and exit codes, and `agent-cli help <command>` shows the usage, flags and examples of one command. For the hosted build, use `abot help` instead.
 
 ## Developer's Overview
 
@@ -162,11 +136,14 @@ Help output is pinned by golden files in `testdata/`; after an intentional chang
 
 ### Versioning and releases
 
-The version is the single line in `VERSION`; the binaries embed it and the release tooling reads it. Bump it with `./tools/bump_version {major|minor|patch}`.
+The version is the single line in `VERSION`; the binaries embed it and the release tooling reads it.
 
-1. Pull requests to `main` are verified: tests on three systems, lint, configuration and vulnerability checks.
-1. `./tools/create_pr` on `main` opens the release candidate pull request to `release`; it publishes the `v<version>-beta` pre-release with `agent-cli-dev` and `abot-dev`.
-1. Merging it publishes the `v<version>` release with `agent-cli` and `abot`.
+1. Maintainers commit and push changes directly to `main`. Pull requests from contributors are verified without publishing anything.
+1. On `main`, run `./tools/bump_version {major|minor|patch}`, commit the change as `Bump version`, and push it.
+1. Run `./tools/create_pr` on `main` to open `Release Candidate v<VERSION>` from `main` to `release`, labeled `Release`. After verification, it publishes the `v<VERSION>-beta` pre-release: `agent-cli-dev` and `abot-dev` archives and checksums only, with no packages or tap/bucket updates.
+1. Merge the release candidate with a **merge commit**, not squash or rebase. The push to `release` verifies and publishes `v<VERSION>`: `agent-cli` and `abot` archives, checksums and hosted Linux packages, then updates the Homebrew formula and Scoop manifest.
+
+[`tools/release`](./tools/release) drives GoReleaser; [`.goreleaser.yaml`](./.goreleaser.yaml) defines the archives, Linux packages, formula in [`appifyhub/homebrew-tap`](https://github.com/appifyhub/homebrew-tap) and manifest in [`appifyhub/scoop-bucket`](https://github.com/appifyhub/scoop-bucket). Release publishing uses `GITHUB_TOKEN` for this repository's tags, releases and PR comments; only the cross-repository tap and bucket publishers use `CI_TOKEN_ABOT`, passed to the production job only.
 
 Each version is released once, so bump `VERSION` before opening the next release candidate.
 

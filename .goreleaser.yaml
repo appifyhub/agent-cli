@@ -59,7 +59,7 @@ nfpms:
     vendor: AppifyHub
     homepage: "{{ .Env.THE_AGENT_CLI_PRODUCT_URL }}"
     maintainer: AppifyHub
-    description: The Agent's command-line interface
+    description: Command-line interface for The Agent
     license: MIT
     formats: [ deb, rpm ]
     bindir: /usr/bin
@@ -72,6 +72,44 @@ nfpms:
       - src: README.md
         dst: /usr/share/doc/abot/README.md
     mtime: "{{ .CommitDate }}"
+
+brews:
+  - name: abot
+    ids: [ branded ]
+    repository:
+      owner: appifyhub
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.CI_TOKEN_ABOT }}"
+    directory: Formula
+    homepage: "{{ .Env.THE_AGENT_CLI_PRODUCT_URL }}"
+    description: Command-line interface for The Agent
+    license: MIT
+    skip_upload: auto
+    extra_install: |
+      bin.install_symlink "abot" => "@abot"
+    test: |
+      system "#{bin}/abot", "--version"
+    commit_author:
+      name: the-agent-abot
+      email: the-agent-abot@users.noreply.github.com
+
+scoops:
+  - name: abot
+    ids: [ branded ]
+    repository:
+      owner: appifyhub
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.CI_TOKEN_ABOT }}"
+    directory: bucket
+    homepage: "{{ .Env.THE_AGENT_CLI_PRODUCT_URL }}"
+    description: Command-line interface for The Agent
+    license: MIT
+    skip_upload: auto
+    commit_author:
+      name: the-agent-abot
+      email: the-agent-abot@users.noreply.github.com
 
 checksum:
   name_template: checksums.txt
@@ -91,6 +129,7 @@ changelog:
       - "(?i)version.*increase"
       - "(?i)merge.*request"
       - "(?i)request.*merge"
+      - "(?i)^release candidate v"
 
 release:
   name_template: "The Agent CLI {{ .Env.THE_AGENT_CLI_VERSION }}{{ with .Prerelease }} ({{ . }}){{ end }}"

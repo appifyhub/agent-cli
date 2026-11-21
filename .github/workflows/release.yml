@@ -43,4 +43,5 @@ jobs:
       - name: Publish the abot and agent-cli release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_TOKEN_ABOT: ${{ secrets.CI_TOKEN_ABOT }}
         run: sh tools/release ga

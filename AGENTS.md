@@ -54,6 +54,8 @@ Keep received HTTP status outcomes separate from response-body usability. A fail
 - Use `make build`, `make test`, `make lint` and `make fmt` for everyday work; they wrap the Go tools and the scripts
 - `tools/variants` defines the available builds and their default addresses; do not duplicate that matrix in instructions. `make build` builds the primary CLI, `make build-all` builds all configured variants, and `make snapshot` builds local release archives. Consult the tooling for individual builds and build-time overrides.
 - The version is the single line in `VERSION` and nowhere else; the binary embeds it, and the pipelines and tags read it. For version bumps, run `./tools/bump_version {major|minor|patch}`; major and minor bumps reset lower version segments
+- When `main` is up to date, our `tools/create_pr` opens the release candidate from `main` to `release`. After beta verification, we can merge it to trigger production publishing.
+- In workflows, the repository-scoped `GITHUB_TOKEN` should publish and manage CI work; only cross-repository package publishers should use `CI_TOKEN_ABOT` if no other option is available.
 - Use OpenSpec for development planning and behavior specifications. Follow the applicable change's artifacts; keep task ordering, review checkpoints and progress in that change, not in permanent project instructions or public documentation.
 
 ### Code Quality

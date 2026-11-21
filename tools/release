@@ -77,10 +77,11 @@ export THE_AGENT_CLI_GENERIC_NAME="$VARIANT_NAME"
 export THE_AGENT_CLI_GENERIC_API_URL="$VARIANT_API_URL"
 export THE_AGENT_CLI_PRODUCT_URL="$VARIANT_PRODUCT_URL"
 export THE_AGENT_CLI_VERSION="$VERSION"
+export GORELEASER_CURRENT_TAG="$TAG"
 
 set --
 if [ "$QUALITY" != "ga" ]; then
-    set -- --skip=nfpm
+    set -- --skip=nfpm,homebrew,scoop
 fi
 
 if [ "$MODE" = "--snapshot" ]; then
@@ -122,7 +123,6 @@ if [ -n "$PREVIOUS_TAG" ]; then
     echoinfo "Release notes start after '$PREVIOUS_TAG'"
     export GORELEASER_PREVIOUS_TAG="$PREVIOUS_TAG"
 fi
-export GORELEASER_CURRENT_TAG="$TAG"
 
 if ! "$GORELEASER" release --clean "$@"; then
     echoerr "Publishing failed; removing '$TAG' so the release can be retried." >&2
