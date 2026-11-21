@@ -39,25 +39,6 @@ examples_windows = '''  {name} env
 environment = "Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_PASSPHRASE, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM, NO_COLOR"
 exit_codes = "Exit codes: 0 ok · 1 failure (home directory or config file unusable) · 2 usage error"
 
-[command.server]
-short = "Show the health and version of the backend"
-long = '''Ask the backend whether it is up and print what it reports about itself: its address, status and version, any other detail it shares, and how long it took to answer.
-Needs no connection, token or passphrase, and changes nothing. Use it to tell a server problem from a local one.'''
-examples_unix = '''  {name} server
-  THE_AGENT_CLI_API_URL="https://agent.example.com" {name} server'''
-examples_windows = '''  {name} server
-  $env:THE_AGENT_CLI_API_URL = "https://agent.example.com"; {name} server'''
-environment = "Environment: THE_AGENT_CLI_API_URL, THE_AGENT_CLI_HOME"
-exit_codes = "Exit codes: 0 ok · 1 unhealthy or unreachable server · 2 usage error or invalid API URL · 6 rate limited"
-label_server = "Server"
-label_status = "Status"
-label_version = "Version"
-label_response = "Response"
-response = "{ms} ms"
-unreachable = "could not reach the server at {url}: {reason}"
-http_error = "the server at {url} answered HTTP {status}"
-not_agent = "the address {url} did not answer like the agent's server"
-
 [command.completion]
 short = "Generate shell completion scripts"
 long = "Generate the completion script for the given shell and print it to stdout."
@@ -233,45 +214,68 @@ already_revoked = "✓ Already revoked. Local token removed."
 unreachable = "could not reach the server; local token kept"
 
 [command.status]
-short = "Show the connection status of this machine"
-long = '''Report this machine's connection, token storage and expiry, default target and backend.
-Works offline: never contacts the server, accesses the keychain, reads or unlocks a stored token, prompts, or changes files. It cannot detect server-side revocation.
+short = "Show local readiness and backend status"
+long = '''Report this machine's connection, token storage and expiry, default target, backend and installed CLI version.
+By default, one public request with a three-second timeout reports backend status and compares the installed and advertised CLI versions. The completion time is saved for that backend even if the check fails.
+Use --offline to show local readiness and the last check time without sending requests or writing state. Neither mode accesses the keychain, reads or unlocks a stored token, prompts or detects server-side revocation.
 Passphrase storage is reported as locked unless THE_AGENT_CLI_TOKEN is set, even when THE_AGENT_CLI_PASSPHRASE is available. Expired tokens require reconnecting.
 
-Example report (macOS, clock at 2026-11-14 10:21):
-Connected as Example User (workstation)
-  Device ID: 6b8f0d3e-2a1c-4e55-9a37-0c1d2e3f4a5b
-  Token: macOS Keychain, expires 2027-02-14 10:21 (in 3 months)
-  Default chat: 3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7 (telegram · Example Chat, private)
-  Backend: {backend}
+Example offline report (macOS, before the first online check):
+✓ Connected as Example User (workstation)
+  Device ID         6b8f0d3e-2a1c-4e55-9a37-0c1d2e3f4a5b
+  Token storage     macOS Keychain
+  Token expiry      2027-02-14 10:21 (in 3 months)
+  Default chat      3f2a9c1e7b6d4a58b0c1d2e3f4a5b6c7 (telegram · Example Chat, private)
+  Backend           {backend}
+  Local CLI         1.2.3
+  Last checked      never checked
 
 Use {name} connect <KEY> to connect this machine.'''
-examples = '''  {name} status'''
+offline = "Show local readiness and last check time without sending requests"
+examples = '''  {name} status
+  {name} status --offline'''
 environment = "Environment: THE_AGENT_CLI_HOME, THE_AGENT_CLI_API_URL, THE_AGENT_CLI_TOKEN, THE_AGENT_CLI_DEFAULT_CHAT, THE_AGENT_CLI_DEFAULT_PLATFORM"
-exit_codes = "Exit codes: 0 locally connected · 1 local state unusable · 2 usage or default validation error · 3 not connected, locked, expired or invalid environment token"
+exit_codes = "Exit codes: 0 locally connected · 1 local state unusable or operational failure · 2 usage or default validation error · 3 not connected, locked, expired or invalid environment token. Backend health does not affect the exit code."
 
 [status]
 not_connected = '''Not connected.
 Get a connect key from the agent's chat settings, then run `{name} connect <KEY>`.'''
 connected = "Connected as {user} ({hostname})"
+connected_ready = "✓ Connected as {user} ({hostname})"
 connected_environment = "Connected using THE_AGENT_CLI_TOKEN"
-device = "  Device ID: {id}"
 location_environment = "THE_AGENT_CLI_TOKEN environment variable"
 location_locked = "{path} (encrypted, locked)"
-token = "  Token: {location}"
-token_expires = "  Token: {location}, expires {time} ({relative})"
-token_expired = "  Token: {location}, expired on {time} ({relative})"
-default_chat = "  Default chat: {id} ({platform} · {title}, {kind})"
-default_platform = "  Default platform: {platform}"
-default_none = "  Default chat: none (latest chat is used)"
-default_environment_chat = "  Default chat: {id} (from THE_AGENT_CLI_DEFAULT_CHAT)"
-default_environment_platform = "  Default platform: {platform} (from THE_AGENT_CLI_DEFAULT_PLATFORM)"
+expiry_unknown = "unknown"
+token_expires = "{time} ({relative})"
+token_expired = "expired on {time} ({relative})"
+default_chat = "{id} ({platform} · {title}, {kind})"
+default_none = "none (latest chat is used)"
+default_environment_chat = "{id} (from THE_AGENT_CLI_DEFAULT_CHAT)"
+default_environment_platform = "{platform} (from THE_AGENT_CLI_DEFAULT_PLATFORM)"
 private = "private"
 group = "group"
-backend = "  Backend: {url}"
 reconnect = "  Run `{name} connect <KEY>` to connect again."
 unlock_unix = '  To unlock: eval "$({name} unlock)"'
 unlock_windows = "  To unlock: {name} unlock --shell pwsh | Invoke-Expression"
+invalid_address = "invalid address"
+unavailable = "unavailable"
+latest = "latest"
+update_available = "update available · {url}"
+never_checked = "never checked"
+label_device = "Device ID"
+label_storage = "Token storage"
+label_expiry = "Token expiry"
+label_default_chat = "Default chat"
+label_default_platform = "Default platform"
+label_backend = "Backend"
+label_status = "Backend status"
+label_version = "Backend version"
+label_cli_local = "Local CLI"
+label_cli_latest = "Latest CLI"
+label_update = "CLI update"
+label_checked = "Last checked"
+label_response = "Response"
+response = "{ms} ms"
 
 [command.chats]
 short = "List chats and manage the default target"

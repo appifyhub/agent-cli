@@ -11,12 +11,12 @@ Never run {name} revoke-all or {name} connect --store unsafe without the user's 
 
 ## Check readiness
 
-Run {name} status first. It is offline and read-only; it reports local state, not server-side token validity.
+Run {name} status --offline first. It sends no requests and writes no state; it reports local readiness and the last backend check time, not server-side token validity.
 If it exits 3 or reports not connected, locked or expired, stop and ask the user to fix the connection in their own terminal.
 For a new or expired connection, the user runs {name} connect with a fresh key themselves.
 For a locked passphrase connection, ask the user to apply {unlock} in the terminal that launches the agent, then resume from an environment that inherits the unlocked token.
 Do not try to answer secret prompts: agents have no interactive terminal for this flow.
-The user may run {name} server to check backend health separately.
+For backend diagnostics, the user may run {name} status without --offline. It records the check time for that backend. Its exit code reports local readiness, not backend health.
 
 ## Send a notification
 
